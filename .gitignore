@@ -1,0 +1,26 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+
+# Dependencies and generated output
+node_modules/
+.pnpm-store/
+dist/
+build/
+coverage/
+.expo/
+*.tsbuildinfo
+*.log
+
+# Database backups and local data
+backups/
+*.dump
+*.backup
+
+# OS and editor-local files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*.local.json
+powershell.cmd

@@ -1,0 +1,5753 @@
+openapi: 3.0.3
+info:
+  title: Halora Cosmetics API
+  description: Official OpenAPI 3.0.3 integration contract for Halora cosmetics administration and customer shopping system.
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000/api/v1
+    description: Local development backend server
+paths:
+  # ================= AUTHENTICATION =================
+  /auth/staff/login:
+    post:
+      tags: [Auth]
+      summary: Staff login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [identifier, password]
+              properties:
+                identifier:
+                  type: string
+                  description: Username or email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Staff login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffAuthResultResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /auth/customer/login:
+    post:
+      tags: [Auth]
+      summary: Customer login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [identifier, password]
+              properties:
+                identifier:
+                  type: string
+                  description: Username or email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Customer login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAuthResultResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /auth/customer/register:
+    post:
+      tags: [Auth]
+      summary: Customer registration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fullName, username, email, phone, password]
+              properties:
+                fullName:
+                  type: string
+                username:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                phone:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '201':
+          description: Customer registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [customerId, accountId]
+                    properties:
+                      customerId:
+                        $ref: '#/components/schemas/UUID'
+                      accountId:
+                        $ref: '#/components/schemas/UUID'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /auth/staff/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh staff access token using HttpOnly cookie
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffAuthResultResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /auth/customer/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh customer access token using refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAuthResultResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /auth/staff/logout:
+    post:
+      tags: [Auth]
+      summary: Staff logout
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Staff logged out
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /auth/customer/logout:
+    post:
+      tags: [Auth]
+      summary: Customer logout
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: Customer logged out
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current authenticated principal
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current principal
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrincipalResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Change password for current account
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword:
+                  type: string
+                newPassword:
+                  type: string
+      responses:
+        '200':
+          description: Password changed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /auth/staff/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Request staff password reset token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: Reset instructions sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /auth/customer/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Request customer password reset token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: Reset instructions sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+
+  /auth/staff/reset-password:
+    post:
+      tags: [Auth]
+      summary: Reset staff password with token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, newPassword]
+              properties:
+                token:
+                  type: string
+                newPassword:
+                  type: string
+      responses:
+        '200':
+          description: Password reset successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /auth/customer/reset-password:
+    post:
+      tags: [Auth]
+      summary: Reset customer password with token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, newPassword]
+              properties:
+                token:
+                  type: string
+                newPassword:
+                  type: string
+      responses:
+        '200':
+          description: Password reset successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+
+  # ================= PUBLIC STOREFRONT =================
+  /categories:
+    get:
+      tags: [Storefront]
+      summary: List active product categories
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/SearchQuery'
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [name, code, createdAt]
+        - $ref: '#/components/parameters/SortOrderQuery'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryPaginatedResponse'
+
+  /brands:
+    get:
+      tags: [Storefront]
+      summary: List active brands
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/SearchQuery'
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [name, code, createdAt]
+        - $ref: '#/components/parameters/SortOrderQuery'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BrandPaginatedResponse'
+
+  /products:
+    get:
+      tags: [Storefront]
+      summary: List public products
+      parameters:
+        - name: categoryId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: brandId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: minPrice
+          in: query
+          schema:
+            $ref: '#/components/schemas/Money'
+        - name: maxPrice
+          in: query
+          schema:
+            $ref: '#/components/schemas/Money'
+        - name: isFeatured
+          in: query
+          schema:
+            type: boolean
+        - name: inStock
+          in: query
+          schema:
+            type: boolean
+        - $ref: '#/components/parameters/SearchQuery'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [name, priceFrom, createdAt]
+        - $ref: '#/components/parameters/SortOrderQuery'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicProductSummaryPaginatedResponse'
+
+  /products/{id}:
+    get:
+      tags: [Storefront]
+      summary: Get public product details by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicProductDetailResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+
+  # ================= CUSTOMER PORTAL (/me) =================
+  /me/profile:
+    get:
+      tags: [Customer]
+      summary: Get customer profile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+    patch:
+      tags: [Customer]
+      summary: Update customer profile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fullName, phone, version]
+              properties:
+                fullName:
+                  type: string
+                phone:
+                  type: string
+                version:
+                  type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /me/addresses:
+    get:
+      tags: [Customer]
+      summary: List customer delivery addresses
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAddressListResponse'
+    post:
+      tags: [Customer]
+      summary: Create new delivery address
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerAddressInput'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAddressResponse'
+
+  /me/addresses/{id}:
+    patch:
+      tags: [Customer]
+      summary: Update delivery address
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerAddressUpdateInput'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAddressResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+    delete:
+      tags: [Customer]
+      summary: Delete delivery address
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '204':
+          description: Address deleted
+
+  /me/cart:
+    get:
+      tags: [Cart]
+      summary: Get active customer shopping cart
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartResponse'
+
+  /me/cart/items:
+    post:
+      tags: [Cart]
+      summary: Add item to cart
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [variantId, quantity]
+              properties:
+                variantId:
+                  $ref: '#/components/schemas/UUID'
+                quantity:
+                  type: integer
+                  minimum: 1
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartResponse'
+    delete:
+      tags: [Cart]
+      summary: Clear entire cart
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: version
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Cart cleared
+
+  /me/cart/items/{id}:
+    patch:
+      tags: [Cart]
+      summary: Update cart item quantity
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quantity, version]
+              properties:
+                quantity:
+                  type: integer
+                  minimum: 1
+                version:
+                  type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+    delete:
+      tags: [Cart]
+      summary: Remove item from cart
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: version
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Cart item removed
+
+  /me/checkout/quote:
+    post:
+      tags: [Checkout]
+      summary: Generate checkout pricing quote
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutQuoteInput'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutQuoteResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /me/orders:
+    post:
+      tags: [Orders]
+      summary: Place order with checkout quote
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderInput'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetailResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+    get:
+      tags: [Orders]
+      summary: List customer orders
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/OrderStatus'
+        - name: from
+          in: query
+          schema:
+            $ref: '#/components/schemas/ISODateTime'
+        - name: to
+          in: query
+          schema:
+            $ref: '#/components/schemas/ISODateTime'
+        - $ref: '#/components/parameters/SearchQuery'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderSummaryPaginatedResponse'
+
+  /me/orders/{id}:
+    get:
+      tags: [Orders]
+      summary: Get customer order detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetailResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+    patch:
+      tags: [Orders]
+      summary: Update pending order (while PENDING_CONFIRMATION)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePendingOrderInput'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetailResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /me/orders/{id}/cancel:
+    post:
+      tags: [Orders]
+      summary: Cancel customer order (while PENDING_CONFIRMATION)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderCancelInput'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetailResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+
+  # ================= ADMIN RESOURCES =================
+  /admin/categories:
+    get:
+      tags: [Admin Categories]
+      summary: Admin list product categories
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/SearchQuery'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/ActiveStatus'
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [name, code, createdAt, updatedAt]
+        - $ref: '#/components/parameters/SortOrderQuery'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryPaginatedResponse'
+    post:
+      tags: [Admin Categories]
+      summary: Admin create product category
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryInput'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryResponse'
+
+  /admin/categories/{id}:
+    get:
+      tags: [Admin Categories]
+      summary: Admin get category by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryResponse'
+    patch:
+      tags: [Admin Categories]
+      summary: Admin update category
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/CategoryInput'
+                - type: object
+                  required: [version]
+                  properties:
+                    version:
+                      type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+    delete:
+      tags: [Admin Categories]
+      summary: Admin delete category
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '204':
+          description: Category deleted
+        '409':
+          description: Resource in use
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+
+  /admin/brands:
+    get:
+      tags: [Admin Brands]
+      summary: Admin list brands
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/SearchQuery'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/ActiveStatus'
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [name, code, createdAt, updatedAt]
+        - $ref: '#/components/parameters/SortOrderQuery'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BrandPaginatedResponse'
+    post:
+      tags: [Admin Brands]
+      summary: Admin create brand
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BrandInput'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BrandResponse'
+
+  /admin/brands/{id}:
+    get:
+      tags: [Admin Brands]
+      summary: Admin get brand by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BrandResponse'
+    patch:
+      tags: [Admin Brands]
+      summary: Admin update brand
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/BrandInput'
+                - type: object
+                  required: [version]
+                  properties:
+                    version:
+                      type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BrandResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+    delete:
+      tags: [Admin Brands]
+      summary: Admin delete brand
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '204':
+          description: Brand deleted
+        '409':
+          description: Resource in use
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+
+  /admin/products:
+    get:
+      tags: [Admin Products]
+      summary: Admin list products
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/SearchQuery'
+        - name: categoryId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: brandId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/ActiveStatus'
+        - name: isFeatured
+          in: query
+          schema:
+            type: boolean
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [name, code, createdAt, updatedAt]
+        - $ref: '#/components/parameters/SortOrderQuery'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductPaginatedResponse'
+    post:
+      tags: [Admin Products]
+      summary: Admin create product
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductInput'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+
+  /admin/products/{id}:
+    get:
+      tags: [Admin Products]
+      summary: Admin get product by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+    patch:
+      tags: [Admin Products]
+      summary: Admin update product
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ProductInput'
+                - type: object
+                  required: [version]
+                  properties:
+                    version:
+                      type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+    delete:
+      tags: [Admin Products]
+      summary: Admin delete product
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '204':
+          description: Product deleted
+        '409':
+          description: Resource in use
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+
+  /admin/products/{productId}/variants:
+    get:
+      tags: [Admin Product Variants]
+      summary: List variants for product
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductVariantPaginatedResponse'
+    post:
+      tags: [Admin Product Variants]
+      summary: Create variant for product
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VariantInput'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductVariantResponse'
+
+  /admin/products/{productId}/variants/{id}:
+    patch:
+      tags: [Admin Product Variants]
+      summary: Update product variant
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/VariantInput'
+                - type: object
+                  required: [version]
+                  properties:
+                    version:
+                      type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductVariantResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+    delete:
+      tags: [Admin Product Variants]
+      summary: Delete product variant
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '204':
+          description: Variant deleted
+
+  /admin/products/{productId}/images:
+    get:
+      tags: [Admin Product Images]
+      summary: List images for product
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductImageListResponse'
+    post:
+      tags: [Admin Product Images]
+      summary: Add image to product
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductImageInput'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductImageResponse'
+
+  /admin/products/{productId}/images/{id}:
+    patch:
+      tags: [Admin Product Images]
+      summary: Update product image metadata
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                variantId:
+                  type: string
+                  format: uuid
+                  nullable: true
+                altText:
+                  type: string
+                  nullable: true
+                sortOrder:
+                  type: integer
+                version:
+                  type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductImageResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+    delete:
+      tags: [Admin Product Images]
+      summary: Remove image from product
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '204':
+          description: Image deleted
+
+  /admin/media:
+    post:
+      tags: [Admin Media]
+      summary: Upload media asset
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaAssetResponse'
+
+  /admin/customers:
+    get:
+      tags: [Admin Customers]
+      summary: Admin list customers
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/SearchQuery'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/ActiveStatus'
+        - name: accountStatus
+          in: query
+          schema:
+            $ref: '#/components/schemas/AccountStatus'
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [fullName, code, email, createdAt]
+        - $ref: '#/components/parameters/SortOrderQuery'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerPaginatedResponse'
+
+  /admin/customers/{id}:
+    get:
+      tags: [Admin Customers]
+      summary: Admin get customer detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerResponse'
+    patch:
+      tags: [Admin Customers]
+      summary: Admin update customer profile / status
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                fullName:
+                  type: string
+                phone:
+                  type: string
+                status:
+                  $ref: '#/components/schemas/ActiveStatus'
+                version:
+                  type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+    delete:
+      tags: [Admin Customers]
+      summary: Admin delete customer (only allowed if no transaction history)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '204':
+          description: Customer deleted
+        '409':
+          description: Resource in use
+
+  /admin/customers/{id}/addresses:
+    get:
+      tags: [Admin Customers]
+      summary: Admin list addresses of a customer
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerAddressListResponse'
+
+  /admin/customers/{id}/orders:
+    get:
+      tags: [Admin Customers]
+      summary: Admin list orders of a customer
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderSummaryPaginatedResponse'
+
+  /admin/employees:
+    get:
+      tags: [Admin Employees]
+      summary: Admin list employees
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/SearchQuery'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/ActiveStatus'
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [fullName, code, email, createdAt]
+        - $ref: '#/components/parameters/SortOrderQuery'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeePaginatedResponse'
+    post:
+      tags: [Admin Employees]
+      summary: Admin create employee
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeInput'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeeResponse'
+
+  /admin/employees/{id}:
+    get:
+      tags: [Admin Employees]
+      summary: Admin get employee by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeeResponse'
+    patch:
+      tags: [Admin Employees]
+      summary: Admin update employee
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/EmployeeInput'
+                - type: object
+                  required: [version]
+                  properties:
+                    version:
+                      type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeeResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+    delete:
+      tags: [Admin Employees]
+      summary: Admin delete employee
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '204':
+          description: Employee deleted
+
+  /admin/employees/{id}/account:
+    post:
+      tags: [Admin Employees]
+      summary: Admin create user account for employee
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeAccountInput'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+
+  /admin/employees/{id}/roles:
+    put:
+      tags: [Admin Employees]
+      summary: Admin assign roles to employee
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeRoleAssignInput'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeeResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /admin/accounts:
+    get:
+      tags: [Admin Accounts]
+      summary: Admin list accounts
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/SearchQuery'
+        - name: realm
+          in: query
+          schema:
+            $ref: '#/components/schemas/AccountRealm'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/AccountStatus'
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [username, email, createdAt]
+        - $ref: '#/components/parameters/SortOrderQuery'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountPaginatedResponse'
+
+  /admin/accounts/{id}:
+    get:
+      tags: [Admin Accounts]
+      summary: Admin get account by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+    patch:
+      tags: [Admin Accounts]
+      summary: Admin lock, unlock or deactivate account
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountStatusUpdateInput'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /admin/roles:
+    get:
+      tags: [Admin Roles & Permissions]
+      summary: Admin list all roles
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleListResponse'
+
+  /admin/roles/{id}/permissions:
+    patch:
+      tags: [Admin Roles & Permissions]
+      summary: Admin assign permissions to role
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RolePermissionAssignInput'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /admin/permissions:
+    get:
+      tags: [Admin Roles & Permissions]
+      summary: Admin list all available permissions
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PermissionListResponse'
+
+  /admin/suppliers:
+    get:
+      tags: [Admin Suppliers]
+      summary: Admin list suppliers
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/SearchQuery'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/ActiveStatus'
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [name, code, createdAt]
+        - $ref: '#/components/parameters/SortOrderQuery'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierPaginatedResponse'
+    post:
+      tags: [Admin Suppliers]
+      summary: Admin create supplier
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupplierInput'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierResponse'
+
+  /admin/suppliers/{id}:
+    get:
+      tags: [Admin Suppliers]
+      summary: Admin get supplier by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierResponse'
+    patch:
+      tags: [Admin Suppliers]
+      summary: Admin update supplier
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/SupplierInput'
+                - type: object
+                  required: [version]
+                  properties:
+                    version:
+                      type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+    delete:
+      tags: [Admin Suppliers]
+      summary: Admin delete supplier
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '204':
+          description: Supplier deleted
+
+  /admin/suppliers/{supplierId}/variants:
+    get:
+      tags: [Admin Suppliers]
+      summary: List supplied variants for supplier
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: supplierId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierVariantPaginatedResponse'
+    post:
+      tags: [Admin Suppliers]
+      summary: Link variant to supplier with quoted cost price
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: supplierId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupplierVariantInput'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierVariantResponse'
+
+  /admin/suppliers/{supplierId}/variants/{id}:
+    patch:
+      tags: [Admin Suppliers]
+      summary: Update supplied variant
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: supplierId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                quotedCostPrice:
+                  $ref: '#/components/schemas/Money'
+                status:
+                  $ref: '#/components/schemas/ActiveStatus'
+                version:
+                  type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierVariantResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+    delete:
+      tags: [Admin Suppliers]
+      summary: Delete supplied variant link
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: supplierId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '204':
+          description: Supplier variant link deleted
+
+  /admin/goods-receipts:
+    get:
+      tags: [Admin Goods Receipts]
+      summary: List goods receipts
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/SearchQuery'
+        - name: supplierId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/DocumentStatus'
+        - name: from
+          in: query
+          schema:
+            $ref: '#/components/schemas/ISODateTime'
+        - name: to
+          in: query
+          schema:
+            $ref: '#/components/schemas/ISODateTime'
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [receiptCode, receivedAt, createdAt]
+        - $ref: '#/components/parameters/SortOrderQuery'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoodsReceiptPaginatedResponse'
+    post:
+      tags: [Admin Goods Receipts]
+      summary: Create goods receipt draft
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GoodsReceiptInput'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoodsReceiptDetailResponse'
+
+  /admin/goods-receipts/{id}:
+    get:
+      tags: [Admin Goods Receipts]
+      summary: Get goods receipt detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoodsReceiptDetailResponse'
+    patch:
+      tags: [Admin Goods Receipts]
+      summary: Update draft goods receipt
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/GoodsReceiptInput'
+                - type: object
+                  required: [version]
+                  properties:
+                    version:
+                      type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoodsReceiptDetailResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+    delete:
+      tags: [Admin Goods Receipts]
+      summary: Delete draft goods receipt
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '204':
+          description: Draft goods receipt deleted
+
+  /admin/goods-receipts/{id}/post:
+    post:
+      tags: [Admin Goods Receipts]
+      summary: Post (confirm) goods receipt and increment inventory balances
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionInput'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoodsReceiptDetailResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /admin/goods-receipts/{id}/export:
+    get:
+      tags: [Admin Goods Receipts]
+      summary: Export goods receipt PDF
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: format
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [pdf]
+      responses:
+        '200':
+          description: Goods receipt PDF file
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+
+  /admin/inventory/balances:
+    get:
+      tags: [Admin Inventory]
+      summary: List inventory balances by variant
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/SearchQuery'
+        - name: productId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: lowStockOnly
+          in: query
+          schema:
+            type: boolean
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [productName, sku, stockQuantity, updatedAt]
+        - $ref: '#/components/parameters/SortOrderQuery'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryBalancePaginatedResponse'
+
+  /admin/inventory/movements:
+    get:
+      tags: [Admin Inventory]
+      summary: List stock movements history
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - name: variantId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: type
+          in: query
+          schema:
+            $ref: '#/components/schemas/StockMovementType'
+        - name: from
+          in: query
+          schema:
+            $ref: '#/components/schemas/ISODateTime'
+        - name: to
+          in: query
+          schema:
+            $ref: '#/components/schemas/ISODateTime'
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [createdAt]
+        - $ref: '#/components/parameters/SortOrderQuery'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMovementPaginatedResponse'
+
+  /admin/inventory-adjustments:
+    get:
+      tags: [Admin Inventory]
+      summary: List inventory adjustments
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/DocumentStatus'
+        - name: from
+          in: query
+          schema:
+            $ref: '#/components/schemas/ISODateTime'
+        - name: to
+          in: query
+          schema:
+            $ref: '#/components/schemas/ISODateTime'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryAdjustmentPaginatedResponse'
+    post:
+      tags: [Admin Inventory]
+      summary: Create inventory adjustment draft
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryAdjustmentInput'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryAdjustmentDetailResponse'
+
+  /admin/inventory-adjustments/{id}:
+    get:
+      tags: [Admin Inventory]
+      summary: Get inventory adjustment detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryAdjustmentDetailResponse'
+    patch:
+      tags: [Admin Inventory]
+      summary: Update draft inventory adjustment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/InventoryAdjustmentInput'
+                - type: object
+                  required: [version]
+                  properties:
+                    version:
+                      type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryAdjustmentDetailResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+    delete:
+      tags: [Admin Inventory]
+      summary: Delete draft inventory adjustment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '204':
+          description: Draft adjustment deleted
+
+  /admin/inventory-adjustments/{id}/post:
+    post:
+      tags: [Admin Inventory]
+      summary: Post (confirm) inventory adjustment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionInput'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryAdjustmentDetailResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /admin/promotions:
+    get:
+      tags: [Admin Promotions]
+      summary: List promotions
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/SearchQuery'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/PromotionStatus'
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [name, code, startsAt, endsAt, createdAt]
+        - $ref: '#/components/parameters/SortOrderQuery'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromotionPaginatedResponse'
+    post:
+      tags: [Admin Promotions]
+      summary: Create promotion
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PromotionInput'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromotionResponse'
+
+  /admin/promotions/{id}:
+    get:
+      tags: [Admin Promotions]
+      summary: Get promotion detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromotionResponse'
+    patch:
+      tags: [Admin Promotions]
+      summary: Update promotion
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/PromotionInput'
+                - type: object
+                  required: [version]
+                  properties:
+                    version:
+                      type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromotionResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+    delete:
+      tags: [Admin Promotions]
+      summary: Delete promotion
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '204':
+          description: Promotion deleted
+
+  /admin/promotions/{promotionId}/product-rules:
+    get:
+      tags: [Admin Promotions]
+      summary: List product discount rules for promotion
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: promotionId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductPromotionRulePaginatedResponse'
+    post:
+      tags: [Admin Promotions]
+      summary: Create product discount rule
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: promotionId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductPromotionRuleInput'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductPromotionRuleResponse'
+
+  /admin/promotions/{promotionId}/product-rules/{id}:
+    patch:
+      tags: [Admin Promotions]
+      summary: Update product discount rule
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: promotionId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ProductPromotionRuleInput'
+                - type: object
+                  required: [version]
+                  properties:
+                    version:
+                      type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductPromotionRuleResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+    delete:
+      tags: [Admin Promotions]
+      summary: Delete product discount rule
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: promotionId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '204':
+          description: Rule deleted
+
+  /admin/promotions/{promotionId}/order-rules:
+    get:
+      tags: [Admin Promotions]
+      summary: List order level discount rules for promotion
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: promotionId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderPromotionRulePaginatedResponse'
+    post:
+      tags: [Admin Promotions]
+      summary: Create order level discount rule
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: promotionId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderPromotionRuleInput'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderPromotionRuleResponse'
+
+  /admin/promotions/{promotionId}/order-rules/{id}:
+    patch:
+      tags: [Admin Promotions]
+      summary: Update order level discount rule
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: promotionId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/OrderPromotionRuleInput'
+                - type: object
+                  required: [version]
+                  properties:
+                    version:
+                      type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderPromotionRuleResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+    delete:
+      tags: [Admin Promotions]
+      summary: Delete order level discount rule
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: promotionId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '204':
+          description: Rule deleted
+
+  /admin/promotions/{promotionId}/vouchers:
+    get:
+      tags: [Admin Promotions]
+      summary: List vouchers for promotion
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: promotionId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoucherPaginatedResponse'
+    post:
+      tags: [Admin Promotions]
+      summary: Create voucher
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: promotionId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VoucherInput'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoucherResponse'
+
+  /admin/promotions/{promotionId}/vouchers/{id}:
+    patch:
+      tags: [Admin Promotions]
+      summary: Update voucher
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: promotionId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/VoucherInput'
+                - type: object
+                  required: [version]
+                  properties:
+                    version:
+                      type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoucherResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+    delete:
+      tags: [Admin Promotions]
+      summary: Delete voucher
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: promotionId
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '204':
+          description: Voucher deleted
+
+  /admin/orders:
+    get:
+      tags: [Admin Orders]
+      summary: Admin list all orders
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/SearchQuery'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/OrderStatus'
+        - name: paymentMethod
+          in: query
+          schema:
+            $ref: '#/components/schemas/PaymentMethod'
+        - name: from
+          in: query
+          schema:
+            $ref: '#/components/schemas/ISODateTime'
+        - name: to
+          in: query
+          schema:
+            $ref: '#/components/schemas/ISODateTime'
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [orderCode, totalAmount, createdAt, updatedAt]
+        - $ref: '#/components/parameters/SortOrderQuery'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderSummaryPaginatedResponse'
+
+  /admin/orders/{id}:
+    get:
+      tags: [Admin Orders]
+      summary: Admin get full order details
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetailResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /admin/orders/{id}/confirm:
+    post:
+      tags: [Admin Orders]
+      summary: Confirm order and deduct stock
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionInput'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetailResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /admin/orders/{id}/dispatch:
+    post:
+      tags: [Admin Orders]
+      summary: Mark order as shipping
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionInput'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetailResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /admin/orders/{id}/complete:
+    post:
+      tags: [Admin Orders]
+      summary: Mark order as completed
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionInput'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetailResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /admin/orders/{id}/cancel:
+    post:
+      tags: [Admin Orders]
+      summary: Cancel order and restock if previously confirmed
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderCancelInput'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderDetailResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /admin/orders/{id}/payments:
+    post:
+      tags: [Admin Orders]
+      summary: Record new payment attempt for order (PENDING)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderPaymentInput'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /admin/payments/{id}/confirm:
+    post:
+      tags: [Admin Payments]
+      summary: Confirm payment as SUCCEEDED
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentActionInput'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /admin/payments/{id}/fail:
+    post:
+      tags: [Admin Payments]
+      summary: Mark payment attempt as FAILED
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentFailInput'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /admin/refunds/{id}/confirm:
+    post:
+      tags: [Admin Payments]
+      summary: Confirm refund as SUCCEEDED
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentActionInput'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /admin/refunds/{id}/fail:
+    post:
+      tags: [Admin Payments]
+      summary: Mark refund as FAILED
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentFailInput'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /admin/orders/{id}/invoice:
+    post:
+      tags: [Admin Invoices]
+      summary: Create draft invoice from completed order
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInvoiceInput'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceDetailResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /admin/invoices:
+    get:
+      tags: [Admin Invoices]
+      summary: List invoices
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/SearchQuery'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/DocumentStatus'
+        - name: from
+          in: query
+          schema:
+            $ref: '#/components/schemas/ISODateTime'
+        - name: to
+          in: query
+          schema:
+            $ref: '#/components/schemas/ISODateTime'
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [invoiceCode, issuedAt, totalAmount, createdAt]
+        - $ref: '#/components/parameters/SortOrderQuery'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoicePaginatedResponse'
+
+  /admin/invoices/{id}:
+    get:
+      tags: [Admin Invoices]
+      summary: Get invoice detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceDetailResponse'
+    patch:
+      tags: [Admin Invoices]
+      summary: Update draft invoice
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoiceUpdateInput'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceDetailResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+    delete:
+      tags: [Admin Invoices]
+      summary: Delete draft invoice
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      responses:
+        '204':
+          description: Draft invoice deleted
+
+  /admin/invoices/{id}/refresh-items:
+    post:
+      tags: [Admin Invoices]
+      summary: Refresh draft invoice items from linked order
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionInput'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceDetailResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /admin/invoices/{id}/post:
+    post:
+      tags: [Admin Invoices]
+      summary: Post (issue) invoice
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionInput'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceDetailResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /admin/invoices/{id}/export:
+    get:
+      tags: [Admin Invoices]
+      summary: Export invoice PDF
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: format
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [pdf]
+      responses:
+        '200':
+          description: Invoice PDF binary
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+
+  /admin/dashboard:
+    get:
+      tags: [Admin Reports]
+      summary: Get administration dashboard overview metrics
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          schema:
+            $ref: '#/components/schemas/ISODateTime'
+        - name: to
+          in: query
+          schema:
+            $ref: '#/components/schemas/ISODateTime'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportDataResponse'
+
+  /admin/reports/sales:
+    get:
+      tags: [Admin Reports]
+      summary: Sales report
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ReportCommonQueryParams'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportDataResponse'
+
+  /admin/reports/payments:
+    get:
+      tags: [Admin Reports]
+      summary: Payments and reconciliations report
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ReportCommonQueryParams'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportDataResponse'
+
+  /admin/reports/inventory:
+    get:
+      tags: [Admin Reports]
+      summary: Inventory and stock valuation report
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ReportCommonQueryParams'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportDataResponse'
+
+  /admin/reports/purchases:
+    get:
+      tags: [Admin Reports]
+      summary: Purchases and goods receipts report
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ReportCommonQueryParams'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportDataResponse'
+
+  /admin/reports/promotions:
+    get:
+      tags: [Admin Reports]
+      summary: Promotions and voucher usage report
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ReportCommonQueryParams'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportDataResponse'
+
+  /admin/reports/activity:
+    get:
+      tags: [Admin Reports]
+      summary: System and staff activity audit report
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ReportCommonQueryParams'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportDataResponse'
+
+  /admin/reports/{reportType}/export:
+    get:
+      tags: [Admin Reports]
+      summary: Export report data
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reportType
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [sales, payments, inventory, purchases, promotions, activity]
+        - name: format
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [xlsx, pdf]
+        - $ref: '#/components/parameters/ReportCommonQueryParams'
+      responses:
+        '200':
+          description: Exported report file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: refreshToken
+
+  parameters:
+    PageQuery:
+      name: page
+      in: query
+      schema:
+        type: integer
+        default: 1
+        minimum: 1
+    LimitQuery:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        default: 20
+        minimum: 1
+        maximum: 100
+    SearchQuery:
+      name: search
+      in: query
+      schema:
+        type: string
+    SortOrderQuery:
+      name: sortOrder
+      in: query
+      schema:
+        type: string
+        enum: [asc, desc]
+        default: desc
+    IdempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+        description: Unique key preventing duplicated mutations
+    ReportCommonQueryParams:
+      name: reportFilter
+      in: query
+      schema:
+        type: object
+        properties:
+          from:
+            $ref: '#/components/schemas/ISODateTime'
+          to:
+            $ref: '#/components/schemas/ISODateTime'
+          compareFrom:
+            $ref: '#/components/schemas/ISODateTime'
+          compareTo:
+            $ref: '#/components/schemas/ISODateTime'
+          productId:
+            $ref: '#/components/schemas/UUID'
+          variantId:
+            $ref: '#/components/schemas/UUID'
+          categoryId:
+            $ref: '#/components/schemas/UUID'
+          employeeId:
+            $ref: '#/components/schemas/UUID'
+          supplierId:
+            $ref: '#/components/schemas/UUID'
+          orderStatus:
+            $ref: '#/components/schemas/OrderStatus'
+          paymentStatus:
+            $ref: '#/components/schemas/PaymentStatus'
+          page:
+            type: integer
+            default: 1
+          limit:
+            type: integer
+            default: 20
+
+  responses:
+    ErrorResponse:
+      description: API error response
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+
+  schemas:
+    # Basic primitives
+    UUID:
+      type: string
+      format: uuid
+    Money:
+      type: string
+      pattern: '^[0-9]+$'
+      description: Integer string in VND currency (e.g. 250000)
+    Percentage:
+      type: string
+      pattern: '^[0-9]+(\.[0-9]{1,2})?$'
+      description: Decimal string percentage (e.g. 10.00)
+    ISODateTime:
+      type: string
+      format: date-time
+
+    # Enumerations
+    ActiveStatus:
+      type: string
+      enum: [ACTIVE, INACTIVE]
+    AccountRealm:
+      type: string
+      enum: [CUSTOMER, STAFF]
+    AccountStatus:
+      type: string
+      enum: [ACTIVE, LOCKED, INACTIVE]
+    OrderStatus:
+      type: string
+      enum: [PENDING_CONFIRMATION, CONFIRMED, SHIPPING, COMPLETED, CANCELLED]
+    PaymentMethod:
+      type: string
+      enum: [COD, BANK_TRANSFER]
+    PaymentStatus:
+      type: string
+      enum: [PENDING, SUCCEEDED, FAILED, CANCELLED]
+    RefundStatus:
+      type: string
+      enum: [PENDING, SUCCEEDED, FAILED]
+    DocumentStatus:
+      type: string
+      enum: [DRAFT, POSTED, CANCELLED]
+    PromotionStatus:
+      type: string
+      enum: [DRAFT, ACTIVE, PAUSED, ENDED]
+    StockMovementType:
+      type: string
+      enum: [RECEIPT, SALE, CANCELLATION, ADJUSTMENT]
+    DiscountScope:
+      type: string
+      enum: [PRODUCT, ORDER, VOUCHER]
+    ReportMetricUnit:
+      type: string
+      enum: [VND, COUNT, QUANTITY]
+    ReportColumnType:
+      type: string
+      enum: [TEXT, MONEY, NUMBER, DATETIME, STATUS]
+    ReportSourceType:
+      type: string
+      enum: [ORDER, INVOICE, GOODS_RECEIPT]
+
+    # Common Envelopes
+    PaginationMeta:
+      type: object
+      required: [page, limit, total, totalPages]
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+        totalPages:
+          type: integer
+
+    ApiError:
+      type: object
+      required: [code, message, requestId]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        fieldErrors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        requestId:
+          type: string
+
+    ApiErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: '#/components/schemas/ApiError'
+
+    MessageResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [message]
+          properties:
+            message:
+              type: string
+
+    ActionInput:
+      type: object
+      required: [version]
+      properties:
+        version:
+          type: integer
+        note:
+          type: string
+          nullable: true
+
+    EntityMetadata:
+      type: object
+      required: [id, createdAt, updatedAt, version]
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        createdAt:
+          $ref: '#/components/schemas/ISODateTime'
+        updatedAt:
+          $ref: '#/components/schemas/ISODateTime'
+        version:
+          type: integer
+
+    # Auth
+    Principal:
+      type: object
+      required: [accountId, realm, username, email, displayName, customerId, employeeId, roles, permissions]
+      properties:
+        accountId:
+          $ref: '#/components/schemas/UUID'
+        realm:
+          $ref: '#/components/schemas/AccountRealm'
+        username:
+          type: string
+        email:
+          type: string
+        displayName:
+          type: string
+        customerId:
+          type: string
+          format: uuid
+          nullable: true
+        employeeId:
+          type: string
+          format: uuid
+          nullable: true
+        roles:
+          type: array
+          items:
+            type: string
+        permissions:
+          type: array
+          items:
+            type: string
+
+    PrincipalResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/Principal'
+
+    StaffAuthResult:
+      type: object
+      required: [accessToken, expiresIn, principal]
+      properties:
+        accessToken:
+          type: string
+        expiresIn:
+          type: integer
+        principal:
+          $ref: '#/components/schemas/Principal'
+
+    StaffAuthResultResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/StaffAuthResult'
+
+    CustomerAuthResult:
+      allOf:
+        - $ref: '#/components/schemas/StaffAuthResult'
+        - type: object
+          required: [refreshToken]
+          properties:
+            refreshToken:
+              type: string
+
+    CustomerAuthResultResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/CustomerAuthResult'
+
+    # Category
+    Category:
+      allOf:
+        - $ref: '#/components/schemas/EntityMetadata'
+        - type: object
+          required: [code, name, description, status]
+          properties:
+            code:
+              type: string
+            name:
+              type: string
+            description:
+              type: string
+              nullable: true
+            status:
+              $ref: '#/components/schemas/ActiveStatus'
+
+    CategoryInput:
+      type: object
+      required: [name, description, status]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/ActiveStatus'
+
+    CategoryResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/Category'
+
+    CategoryPaginatedResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # Brand
+    Brand:
+      allOf:
+        - $ref: '#/components/schemas/EntityMetadata'
+        - type: object
+          required: [code, name, description, status]
+          properties:
+            code:
+              type: string
+            name:
+              type: string
+            description:
+              type: string
+              nullable: true
+            status:
+              $ref: '#/components/schemas/ActiveStatus'
+
+    BrandInput:
+      type: object
+      required: [name, description, status]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/ActiveStatus'
+
+    BrandResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/Brand'
+
+    BrandPaginatedResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Brand'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # Product
+    Product:
+      allOf:
+        - $ref: '#/components/schemas/EntityMetadata'
+        - type: object
+          required: [code, name, slug, categoryId, brandId, description, ingredients, benefits, isFeatured, status]
+          properties:
+            code:
+              type: string
+            name:
+              type: string
+            slug:
+              type: string
+            categoryId:
+              $ref: '#/components/schemas/UUID'
+            brandId:
+              $ref: '#/components/schemas/UUID'
+            description:
+              type: string
+              nullable: true
+            ingredients:
+              type: string
+              nullable: true
+            benefits:
+              type: string
+              nullable: true
+            isFeatured:
+              type: boolean
+            status:
+              $ref: '#/components/schemas/ActiveStatus'
+
+    ProductInput:
+      type: object
+      required: [name, slug, categoryId, brandId, description, ingredients, benefits, isFeatured, status]
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        categoryId:
+          $ref: '#/components/schemas/UUID'
+        brandId:
+          $ref: '#/components/schemas/UUID'
+        description:
+          type: string
+          nullable: true
+        ingredients:
+          type: string
+          nullable: true
+        benefits:
+          type: string
+          nullable: true
+        isFeatured:
+          type: boolean
+        status:
+          $ref: '#/components/schemas/ActiveStatus'
+
+    ProductResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/Product'
+
+    ProductPaginatedResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Product'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # Product Variant
+    ProductVariant:
+      allOf:
+        - $ref: '#/components/schemas/EntityMetadata'
+        - type: object
+          required: [productId, sku, name, color, volumeMl, weightGrams, salePrice, referenceCostPrice, stockQuantity, lowStockThreshold, status]
+          properties:
+            productId:
+              $ref: '#/components/schemas/UUID'
+            sku:
+              type: string
+            name:
+              type: string
+            color:
+              type: string
+              nullable: true
+            volumeMl:
+              type: number
+              nullable: true
+            weightGrams:
+              type: number
+              nullable: true
+            salePrice:
+              $ref: '#/components/schemas/Money'
+            referenceCostPrice:
+              type: string
+              pattern: '^[0-9]+$'
+              nullable: true
+            stockQuantity:
+              type: integer
+            lowStockThreshold:
+              type: integer
+            status:
+              $ref: '#/components/schemas/ActiveStatus'
+
+    VariantInput:
+      type: object
+      required: [sku, name, color, volumeMl, weightGrams, salePrice, referenceCostPrice, lowStockThreshold, status]
+      properties:
+        sku:
+          type: string
+        name:
+          type: string
+        color:
+          type: string
+          nullable: true
+        volumeMl:
+          type: number
+          nullable: true
+        weightGrams:
+          type: number
+          nullable: true
+        salePrice:
+          $ref: '#/components/schemas/Money'
+        referenceCostPrice:
+          type: string
+          pattern: '^[0-9]+$'
+          nullable: true
+        lowStockThreshold:
+          type: integer
+        status:
+          $ref: '#/components/schemas/ActiveStatus'
+
+    ProductVariantResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/ProductVariant'
+
+    ProductVariantPaginatedResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductVariant'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # Media & Images
+    ProductImage:
+      allOf:
+        - $ref: '#/components/schemas/EntityMetadata'
+        - type: object
+          required: [productId, variantId, mediaId, url, altText, sortOrder]
+          properties:
+            productId:
+              $ref: '#/components/schemas/UUID'
+            variantId:
+              type: string
+              format: uuid
+              nullable: true
+            mediaId:
+              $ref: '#/components/schemas/UUID'
+            url:
+              type: string
+            altText:
+              type: string
+              nullable: true
+            sortOrder:
+              type: integer
+
+    ProductImageInput:
+      type: object
+      required: [mediaId, variantId, altText, sortOrder]
+      properties:
+        mediaId:
+          $ref: '#/components/schemas/UUID'
+        variantId:
+          type: string
+          format: uuid
+          nullable: true
+        altText:
+          type: string
+          nullable: true
+        sortOrder:
+          type: integer
+
+    ProductImageResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/ProductImage'
+
+    ProductImageListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductImage'
+
+    MediaAsset:
+      type: object
+      required: [id, url, mimeType, size, originalName]
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        url:
+          type: string
+        mimeType:
+          type: string
+        size:
+          type: integer
+        originalName:
+          type: string
+
+    MediaAssetResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/MediaAsset'
+
+    # Public Storefront Models
+    PublicProductVariant:
+      type: object
+      required: [id, productId, sku, name, color, volumeMl, weightGrams, salePrice, stockQuantity, status]
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        productId:
+          $ref: '#/components/schemas/UUID'
+        sku:
+          type: string
+        name:
+          type: string
+        color:
+          type: string
+          nullable: true
+        volumeMl:
+          type: number
+          nullable: true
+        weightGrams:
+          type: number
+          nullable: true
+        salePrice:
+          $ref: '#/components/schemas/Money'
+        stockQuantity:
+          type: integer
+        status:
+          $ref: '#/components/schemas/ActiveStatus'
+
+    PublicProductSummary:
+      type: object
+      required: [id, code, name, slug, categoryId, categoryName, brandId, brandName, thumbnailUrl, priceFrom, isFeatured]
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        code:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        categoryId:
+          $ref: '#/components/schemas/UUID'
+        categoryName:
+          type: string
+        brandId:
+          $ref: '#/components/schemas/UUID'
+        brandName:
+          type: string
+        thumbnailUrl:
+          type: string
+          nullable: true
+        priceFrom:
+          type: string
+          pattern: '^[0-9]+$'
+          nullable: true
+        isFeatured:
+          type: boolean
+
+    PublicProductSummaryPaginatedResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicProductSummary'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    PublicProductDetail:
+      allOf:
+        - $ref: '#/components/schemas/PublicProductSummary'
+        - type: object
+          required: [description, ingredients, benefits, variants, images]
+          properties:
+            description:
+              type: string
+              nullable: true
+            ingredients:
+              type: string
+              nullable: true
+            benefits:
+              type: string
+              nullable: true
+            variants:
+              type: array
+              items:
+                $ref: '#/components/schemas/PublicProductVariant'
+            images:
+              type: array
+              items:
+                $ref: '#/components/schemas/ProductImage'
+
+    PublicProductDetailResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/PublicProductDetail'
+
+    # Customer & Address
+    Customer:
+      allOf:
+        - $ref: '#/components/schemas/EntityMetadata'
+        - type: object
+          required: [code, accountId, fullName, phone, email, status, accountStatus]
+          properties:
+            code:
+              type: string
+            accountId:
+              $ref: '#/components/schemas/UUID'
+            fullName:
+              type: string
+            phone:
+              type: string
+            email:
+              type: string
+            status:
+              $ref: '#/components/schemas/ActiveStatus'
+            accountStatus:
+              $ref: '#/components/schemas/AccountStatus'
+
+    CustomerResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/Customer'
+
+    CustomerPaginatedResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Customer'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    CustomerAddress:
+      allOf:
+        - $ref: '#/components/schemas/EntityMetadata'
+        - type: object
+          required: [customerId, recipientName, recipientPhone, addressLine, provinceName, wardName, isDefault]
+          properties:
+            customerId:
+              $ref: '#/components/schemas/UUID'
+            recipientName:
+              type: string
+            recipientPhone:
+              type: string
+            addressLine:
+              type: string
+            provinceName:
+              type: string
+            wardName:
+              type: string
+            isDefault:
+              type: boolean
+
+    CustomerAddressInput:
+      type: object
+      required: [recipientName, recipientPhone, addressLine, provinceName, wardName, isDefault]
+      properties:
+        recipientName:
+          type: string
+        recipientPhone:
+          type: string
+        addressLine:
+          type: string
+        provinceName:
+          type: string
+        wardName:
+          type: string
+        isDefault:
+          type: boolean
+
+    CustomerAddressUpdateInput:
+      allOf:
+        - $ref: '#/components/schemas/CustomerAddressInput'
+        - type: object
+          required: [version]
+          properties:
+            version:
+              type: integer
+
+    CustomerAddressResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/CustomerAddress'
+
+    CustomerAddressListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerAddress'
+
+    # Employee & Account & Roles
+    Employee:
+      allOf:
+        - $ref: '#/components/schemas/EntityMetadata'
+        - type: object
+          required: [code, accountId, fullName, phone, email, position, status, roleIds]
+          properties:
+            code:
+              type: string
+            accountId:
+              type: string
+              format: uuid
+              nullable: true
+            fullName:
+              type: string
+            phone:
+              type: string
+            email:
+              type: string
+            position:
+              type: string
+            status:
+              $ref: '#/components/schemas/ActiveStatus'
+            roleIds:
+              type: array
+              items:
+                $ref: '#/components/schemas/UUID'
+
+    EmployeeInput:
+      type: object
+      required: [fullName, phone, email, position, status]
+      properties:
+        fullName:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+        position:
+          type: string
+        status:
+          $ref: '#/components/schemas/ActiveStatus'
+
+    EmployeeResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/Employee'
+
+    EmployeePaginatedResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Employee'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    EmployeeAccountInput:
+      type: object
+      required: [username, email, password]
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    EmployeeRoleAssignInput:
+      type: object
+      required: [roleIds, version]
+      properties:
+        roleIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/UUID'
+        version:
+          type: integer
+
+    Account:
+      allOf:
+        - $ref: '#/components/schemas/EntityMetadata'
+        - type: object
+          required: [realm, username, email, status, customerId, employeeId]
+          properties:
+            realm:
+              $ref: '#/components/schemas/AccountRealm'
+            username:
+              type: string
+            email:
+              type: string
+            status:
+              $ref: '#/components/schemas/AccountStatus'
+            customerId:
+              type: string
+              format: uuid
+              nullable: true
+            employeeId:
+              type: string
+              format: uuid
+              nullable: true
+
+    AccountStatusUpdateInput:
+      type: object
+      required: [status, version]
+      properties:
+        status:
+          $ref: '#/components/schemas/AccountStatus'
+        version:
+          type: integer
+
+    AccountResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/Account'
+
+    AccountPaginatedResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Account'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    Role:
+      allOf:
+        - $ref: '#/components/schemas/EntityMetadata'
+        - type: object
+          required: [code, name, description, permissionIds]
+          properties:
+            code:
+              type: string
+            name:
+              type: string
+            description:
+              type: string
+            permissionIds:
+              type: array
+              items:
+                $ref: '#/components/schemas/UUID'
+
+    RolePermissionAssignInput:
+      type: object
+      required: [permissionIds, version]
+      properties:
+        permissionIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/UUID'
+        version:
+          type: integer
+
+    RoleResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/Role'
+
+    RoleListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+
+    Permission:
+      type: object
+      required: [id, code, name, description]
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+
+    PermissionListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Permission'
+
+    # Cart
+    CartItem:
+      type: object
+      required: [id, productId, variantId, productName, variantName, sku, thumbnailUrl, quantity, unitPrice, lineSubtotal, stockQuantity, isAvailable]
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        productId:
+          $ref: '#/components/schemas/UUID'
+        variantId:
+          $ref: '#/components/schemas/UUID'
+        productName:
+          type: string
+        variantName:
+          type: string
+        sku:
+          type: string
+        thumbnailUrl:
+          type: string
+          nullable: true
+        quantity:
+          type: integer
+        unitPrice:
+          $ref: '#/components/schemas/Money'
+        lineSubtotal:
+          $ref: '#/components/schemas/Money'
+        stockQuantity:
+          type: integer
+        isAvailable:
+          type: boolean
+
+    Cart:
+      type: object
+      required: [id, version, items, totalQuantity, subtotalAmount]
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        version:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CartItem'
+        totalQuantity:
+          type: integer
+        subtotalAmount:
+          $ref: '#/components/schemas/Money'
+
+    CartResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/Cart'
+
+    # Checkout & Quote
+    CheckoutItemInput:
+      type: object
+      required: [variantId, quantity]
+      properties:
+        variantId:
+          $ref: '#/components/schemas/UUID'
+        quantity:
+          type: integer
+          minimum: 1
+
+    CheckoutInput:
+      type: object
+      required: [items, addressId, paymentMethod]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CheckoutItemInput'
+        addressId:
+          $ref: '#/components/schemas/UUID'
+        paymentMethod:
+          $ref: '#/components/schemas/PaymentMethod'
+        voucherCode:
+          type: string
+        note:
+          type: string
+
+    CheckoutQuoteInput:
+      allOf:
+        - $ref: '#/components/schemas/CheckoutInput'
+        - type: object
+          properties:
+            orderId:
+              $ref: '#/components/schemas/UUID'
+
+    OrderAmounts:
+      type: object
+      required: [subtotalAmount, productDiscountAmount, orderDiscountAmount, voucherDiscountAmount, shippingFee, totalAmount]
+      properties:
+        subtotalAmount:
+          $ref: '#/components/schemas/Money'
+        productDiscountAmount:
+          $ref: '#/components/schemas/Money'
+        orderDiscountAmount:
+          $ref: '#/components/schemas/Money'
+        voucherDiscountAmount:
+          $ref: '#/components/schemas/Money'
+        shippingFee:
+          $ref: '#/components/schemas/Money'
+        totalAmount:
+          $ref: '#/components/schemas/Money'
+
+    QuotedOrderItem:
+      type: object
+      required: [productId, variantId, productName, variantName, sku, thumbnailUrl, quantity, unitPrice, lineSubtotal, productDiscountAmount, lineTotal, productPromotionRuleId]
+      properties:
+        productId:
+          $ref: '#/components/schemas/UUID'
+        variantId:
+          $ref: '#/components/schemas/UUID'
+        productName:
+          type: string
+        variantName:
+          type: string
+        sku:
+          type: string
+        thumbnailUrl:
+          type: string
+          nullable: true
+        quantity:
+          type: integer
+        unitPrice:
+          $ref: '#/components/schemas/Money'
+        lineSubtotal:
+          $ref: '#/components/schemas/Money'
+        productDiscountAmount:
+          $ref: '#/components/schemas/Money'
+        lineTotal:
+          $ref: '#/components/schemas/Money'
+        productPromotionRuleId:
+          type: string
+          format: uuid
+          nullable: true
+
+    AppliedDiscount:
+      type: object
+      required: [scope, promotionId, ruleId, variantId, promotionName, voucherCode, amount]
+      properties:
+        scope:
+          $ref: '#/components/schemas/DiscountScope'
+        promotionId:
+          $ref: '#/components/schemas/UUID'
+        ruleId:
+          $ref: '#/components/schemas/UUID'
+        variantId:
+          type: string
+          format: uuid
+          nullable: true
+        promotionName:
+          type: string
+        voucherCode:
+          type: string
+          nullable: true
+        amount:
+          $ref: '#/components/schemas/Money'
+
+    CheckoutQuote:
+      type: object
+      required: [quoteToken, expiresAt, items, amounts, discounts]
+      properties:
+        quoteToken:
+          type: string
+        expiresAt:
+          $ref: '#/components/schemas/ISODateTime'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/QuotedOrderItem'
+        amounts:
+          $ref: '#/components/schemas/OrderAmounts'
+        discounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/AppliedDiscount'
+
+    CheckoutQuoteResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/CheckoutQuote'
+
+    CreateOrderInput:
+      allOf:
+        - $ref: '#/components/schemas/CheckoutInput'
+        - type: object
+          required: [quoteToken]
+          properties:
+            quoteToken:
+              type: string
+
+    UpdatePendingOrderInput:
+      allOf:
+        - $ref: '#/components/schemas/CreateOrderInput'
+        - type: object
+          required: [version]
+          properties:
+            version:
+              type: integer
+
+    OrderCancelInput:
+      type: object
+      required: [version, reason]
+      properties:
+        version:
+          type: integer
+        reason:
+          type: string
+
+    # Order Models
+    OrderItem:
+      allOf:
+        - $ref: '#/components/schemas/QuotedOrderItem'
+        - type: object
+          required: [id]
+          properties:
+            id:
+              $ref: '#/components/schemas/UUID'
+
+    OrderStatusHistory:
+      type: object
+      required: [id, fromStatus, toStatus, note, performedByName, createdAt]
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        fromStatus:
+          allOf:
+            - $ref: '#/components/schemas/OrderStatus'
+          nullable: true
+        toStatus:
+          $ref: '#/components/schemas/OrderStatus'
+        note:
+          type: string
+          nullable: true
+        performedByName:
+          type: string
+          nullable: true
+        createdAt:
+          $ref: '#/components/schemas/ISODateTime'
+
+    Payment:
+      type: object
+      required: [id, orderId, method, amount, status, reference, note, paidAt, createdAt, updatedAt]
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        orderId:
+          $ref: '#/components/schemas/UUID'
+        method:
+          $ref: '#/components/schemas/PaymentMethod'
+        amount:
+          $ref: '#/components/schemas/Money'
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+        reference:
+          type: string
+          nullable: true
+        note:
+          type: string
+          nullable: true
+        paidAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          $ref: '#/components/schemas/ISODateTime'
+        updatedAt:
+          $ref: '#/components/schemas/ISODateTime'
+
+    PaymentResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/Payment'
+
+    CreateOrderPaymentInput:
+      type: object
+      required: [method, amount]
+      properties:
+        method:
+          $ref: '#/components/schemas/PaymentMethod'
+        amount:
+          $ref: '#/components/schemas/Money'
+        reference:
+          type: string
+        note:
+          type: string
+
+    PaymentActionInput:
+      type: object
+      properties:
+        reference:
+          type: string
+        note:
+          type: string
+
+    PaymentFailInput:
+      type: object
+      required: [note]
+      properties:
+        note:
+          type: string
+
+    Refund:
+      type: object
+      required: [id, orderId, paymentId, amount, status, reference, reason, refundedAt, createdAt, updatedAt]
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        orderId:
+          $ref: '#/components/schemas/UUID'
+        paymentId:
+          $ref: '#/components/schemas/UUID'
+        amount:
+          $ref: '#/components/schemas/Money'
+        status:
+          $ref: '#/components/schemas/RefundStatus'
+        reference:
+          type: string
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+        refundedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          $ref: '#/components/schemas/ISODateTime'
+        updatedAt:
+          $ref: '#/components/schemas/ISODateTime'
+
+    RefundResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/Refund'
+
+    OrderSummary:
+      type: object
+      required: [id, version, orderCode, customerId, customerName, status, paymentMethod, totalAmount, paidAmount, refundedAmount, createdAt, updatedAt]
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        version:
+          type: integer
+        orderCode:
+          type: string
+        customerId:
+          $ref: '#/components/schemas/UUID'
+        customerName:
+          type: string
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        paymentMethod:
+          $ref: '#/components/schemas/PaymentMethod'
+        totalAmount:
+          $ref: '#/components/schemas/Money'
+        paidAmount:
+          $ref: '#/components/schemas/Money'
+        refundedAmount:
+          $ref: '#/components/schemas/Money'
+        createdAt:
+          $ref: '#/components/schemas/ISODateTime'
+        updatedAt:
+          $ref: '#/components/schemas/ISODateTime'
+
+    OrderSummaryPaginatedResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderSummary'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    OrderDetail:
+      allOf:
+        - $ref: '#/components/schemas/OrderSummary'
+        - type: object
+          required: [recipientName, recipientPhone, addressLine, provinceName, wardName, note, amounts, items, discounts, payments, refunds, statusHistory, confirmedAt, shippedAt, completedAt, cancelledAt, cancellationReason]
+          properties:
+            recipientName:
+              type: string
+            recipientPhone:
+              type: string
+            addressLine:
+              type: string
+            provinceName:
+              type: string
+            wardName:
+              type: string
+            note:
+              type: string
+              nullable: true
+            amounts:
+              $ref: '#/components/schemas/OrderAmounts'
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/OrderItem'
+            discounts:
+              type: array
+              items:
+                $ref: '#/components/schemas/AppliedDiscount'
+            payments:
+              type: array
+              items:
+                $ref: '#/components/schemas/Payment'
+            refunds:
+              type: array
+              items:
+                $ref: '#/components/schemas/Refund'
+            statusHistory:
+              type: array
+              items:
+                $ref: '#/components/schemas/OrderStatusHistory'
+            confirmedAt:
+              type: string
+              format: date-time
+              nullable: true
+            shippedAt:
+              type: string
+              format: date-time
+              nullable: true
+            completedAt:
+              type: string
+              format: date-time
+              nullable: true
+            cancelledAt:
+              type: string
+              format: date-time
+              nullable: true
+            cancellationReason:
+              type: string
+              nullable: true
+
+    OrderDetailResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/OrderDetail'
+
+    # Invoices
+    Invoice:
+      allOf:
+        - $ref: '#/components/schemas/EntityMetadata'
+        - type: object
+          required: [invoiceCode, orderId, orderCode, employeeId, employeeName, status, issuedAt, note, totalAmount]
+          properties:
+            invoiceCode:
+              type: string
+            orderId:
+              $ref: '#/components/schemas/UUID'
+            orderCode:
+              type: string
+            employeeId:
+              $ref: '#/components/schemas/UUID'
+            employeeName:
+              type: string
+            status:
+              $ref: '#/components/schemas/DocumentStatus'
+            issuedAt:
+              type: string
+              format: date-time
+              nullable: true
+            note:
+              type: string
+              nullable: true
+            totalAmount:
+              $ref: '#/components/schemas/Money'
+
+    InvoiceItem:
+      type: object
+      required: [id, productId, variantId, productName, variantName, sku, quantity, unitPrice, lineTotal]
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        productId:
+          $ref: '#/components/schemas/UUID'
+        variantId:
+          $ref: '#/components/schemas/UUID'
+        productName:
+          type: string
+        variantName:
+          type: string
+        sku:
+          type: string
+        quantity:
+          type: integer
+        unitPrice:
+          $ref: '#/components/schemas/Money'
+        lineTotal:
+          $ref: '#/components/schemas/Money'
+
+    InvoiceDetail:
+      allOf:
+        - $ref: '#/components/schemas/Invoice'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/InvoiceItem'
+
+    InvoicePaginatedResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Invoice'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    InvoiceDetailResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/InvoiceDetail'
+
+    CreateInvoiceInput:
+      type: object
+      properties:
+        note:
+          type: string
+
+    InvoiceUpdateInput:
+      type: object
+      required: [note, version]
+      properties:
+        note:
+          type: string
+        version:
+          type: integer
+
+    # Suppliers & Goods Receipts
+    Supplier:
+      allOf:
+        - $ref: '#/components/schemas/EntityMetadata'
+        - type: object
+          required: [code, name, contactName, phone, email, address, status]
+          properties:
+            code:
+              type: string
+            name:
+              type: string
+            contactName:
+              type: string
+            phone:
+              type: string
+            email:
+              type: string
+            address:
+              type: string
+            status:
+              $ref: '#/components/schemas/ActiveStatus'
+
+    SupplierInput:
+      type: object
+      required: [name, contactName, phone, email, address, status]
+      properties:
+        name:
+          type: string
+        contactName:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+        address:
+          type: string
+        status:
+          $ref: '#/components/schemas/ActiveStatus'
+
+    SupplierResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/Supplier'
+
+    SupplierPaginatedResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Supplier'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    SupplierVariant:
+      allOf:
+        - $ref: '#/components/schemas/EntityMetadata'
+        - type: object
+          required: [supplierId, variantId, productName, variantName, sku, quotedCostPrice, status]
+          properties:
+            supplierId:
+              $ref: '#/components/schemas/UUID'
+            variantId:
+              $ref: '#/components/schemas/UUID'
+            productName:
+              type: string
+            variantName:
+              type: string
+            sku:
+              type: string
+            quotedCostPrice:
+              $ref: '#/components/schemas/Money'
+            status:
+              $ref: '#/components/schemas/ActiveStatus'
+
+    SupplierVariantInput:
+      type: object
+      required: [variantId, quotedCostPrice, status]
+      properties:
+        variantId:
+          $ref: '#/components/schemas/UUID'
+        quotedCostPrice:
+          $ref: '#/components/schemas/Money'
+        status:
+          $ref: '#/components/schemas/ActiveStatus'
+
+    SupplierVariantResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/SupplierVariant'
+
+    SupplierVariantPaginatedResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SupplierVariant'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    GoodsReceiptItem:
+      type: object
+      required: [id, productId, variantId, productName, variantName, sku, quantity, unitCost, lineTotal]
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        productId:
+          $ref: '#/components/schemas/UUID'
+        variantId:
+          $ref: '#/components/schemas/UUID'
+        productName:
+          type: string
+        variantName:
+          type: string
+        sku:
+          type: string
+        quantity:
+          type: integer
+        unitCost:
+          $ref: '#/components/schemas/Money'
+        lineTotal:
+          $ref: '#/components/schemas/Money'
+
+    GoodsReceipt:
+      allOf:
+        - $ref: '#/components/schemas/EntityMetadata'
+        - type: object
+          required: [receiptCode, supplierId, supplierName, employeeId, employeeName, receivedAt, status, note, totalAmount]
+          properties:
+            receiptCode:
+              type: string
+            supplierId:
+              $ref: '#/components/schemas/UUID'
+            supplierName:
+              type: string
+            employeeId:
+              $ref: '#/components/schemas/UUID'
+            employeeName:
+              type: string
+            receivedAt:
+              $ref: '#/components/schemas/ISODateTime'
+            status:
+              $ref: '#/components/schemas/DocumentStatus'
+            note:
+              type: string
+              nullable: true
+            totalAmount:
+              $ref: '#/components/schemas/Money'
+
+    GoodsReceiptDetail:
+      allOf:
+        - $ref: '#/components/schemas/GoodsReceipt'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/GoodsReceiptItem'
+
+    GoodsReceiptPaginatedResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/GoodsReceipt'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    GoodsReceiptDetailResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/GoodsReceiptDetail'
+
+    GoodsReceiptItemInput:
+      type: object
+      required: [variantId, quantity, unitCost]
+      properties:
+        variantId:
+          $ref: '#/components/schemas/UUID'
+        quantity:
+          type: integer
+          minimum: 1
+        unitCost:
+          $ref: '#/components/schemas/Money'
+
+    GoodsReceiptInput:
+      type: object
+      required: [supplierId, receivedAt, items]
+      properties:
+        supplierId:
+          $ref: '#/components/schemas/UUID'
+        receivedAt:
+          $ref: '#/components/schemas/ISODateTime'
+        note:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/GoodsReceiptItemInput'
+
+    # Inventory & Adjustments
+    InventoryBalance:
+      type: object
+      required: [variantId, productId, productName, variantName, sku, stockQuantity, lowStockThreshold, updatedAt]
+      properties:
+        variantId:
+          $ref: '#/components/schemas/UUID'
+        productId:
+          $ref: '#/components/schemas/UUID'
+        productName:
+          type: string
+        variantName:
+          type: string
+        sku:
+          type: string
+        stockQuantity:
+          type: integer
+        lowStockThreshold:
+          type: integer
+        updatedAt:
+          $ref: '#/components/schemas/ISODateTime'
+
+    InventoryBalancePaginatedResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/InventoryBalance'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    StockMovement:
+      type: object
+      required: [id, variantId, sku, type, quantityDelta, quantityAfter, sourceType, sourceId, performedByName, note, createdAt]
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        variantId:
+          $ref: '#/components/schemas/UUID'
+        sku:
+          type: string
+        type:
+          $ref: '#/components/schemas/StockMovementType'
+        quantityDelta:
+          type: integer
+        quantityAfter:
+          type: integer
+        sourceType:
+          type: string
+        sourceId:
+          $ref: '#/components/schemas/UUID'
+        performedByName:
+          type: string
+          nullable: true
+        note:
+          type: string
+          nullable: true
+        createdAt:
+          $ref: '#/components/schemas/ISODateTime'
+
+    StockMovementPaginatedResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/StockMovement'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    InventoryAdjustmentItem:
+      type: object
+      required: [id, variantId, productName, variantName, sku, quantityDelta]
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        variantId:
+          $ref: '#/components/schemas/UUID'
+        productName:
+          type: string
+        variantName:
+          type: string
+        sku:
+          type: string
+        quantityDelta:
+          type: integer
+
+    InventoryAdjustment:
+      allOf:
+        - $ref: '#/components/schemas/EntityMetadata'
+        - type: object
+          required: [adjustmentCode, employeeId, employeeName, status, reason, postedAt]
+          properties:
+            adjustmentCode:
+              type: string
+            employeeId:
+              $ref: '#/components/schemas/UUID'
+            employeeName:
+              type: string
+            status:
+              $ref: '#/components/schemas/DocumentStatus'
+            reason:
+              type: string
+            postedAt:
+              type: string
+              format: date-time
+              nullable: true
+
+    InventoryAdjustmentDetail:
+      allOf:
+        - $ref: '#/components/schemas/InventoryAdjustment'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/InventoryAdjustmentItem'
+
+    InventoryAdjustmentPaginatedResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/InventoryAdjustment'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    InventoryAdjustmentDetailResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/InventoryAdjustmentDetail'
+
+    InventoryAdjustmentItemInput:
+      type: object
+      required: [variantId, quantityDelta]
+      properties:
+        variantId:
+          $ref: '#/components/schemas/UUID'
+        quantityDelta:
+          type: integer
+          description: Non-zero positive or negative integer
+
+    InventoryAdjustmentInput:
+      type: object
+      required: [reason, items]
+      properties:
+        reason:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/InventoryAdjustmentItemInput'
+
+    # Promotions & Vouchers
+    Promotion:
+      allOf:
+        - $ref: '#/components/schemas/EntityMetadata'
+        - type: object
+          required: [code, name, description, startsAt, endsAt, status, hasUsage]
+          properties:
+            code:
+              type: string
+            name:
+              type: string
+            description:
+              type: string
+              nullable: true
+            startsAt:
+              $ref: '#/components/schemas/ISODateTime'
+            endsAt:
+              $ref: '#/components/schemas/ISODateTime'
+            status:
+              $ref: '#/components/schemas/PromotionStatus'
+            hasUsage:
+              type: boolean
+
+    PromotionInput:
+      type: object
+      required: [name, description, startsAt, endsAt, status]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        startsAt:
+          $ref: '#/components/schemas/ISODateTime'
+        endsAt:
+          $ref: '#/components/schemas/ISODateTime'
+        status:
+          $ref: '#/components/schemas/PromotionStatus'
+
+    PromotionResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/Promotion'
+
+    PromotionPaginatedResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Promotion'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    ProductPromotionRule:
+      allOf:
+        - $ref: '#/components/schemas/EntityMetadata'
+        - type: object
+          required: [promotionId, productId, variantId, discountPercent, minQuantity, maxDiscountAmount]
+          properties:
+            promotionId:
+              $ref: '#/components/schemas/UUID'
+            productId:
+              $ref: '#/components/schemas/UUID'
+            variantId:
+              type: string
+              format: uuid
+              nullable: true
+            discountPercent:
+              $ref: '#/components/schemas/Percentage'
+            minQuantity:
+              type: integer
+            maxDiscountAmount:
+              type: string
+              pattern: '^[0-9]+$'
+              nullable: true
+
+    ProductPromotionRuleInput:
+      type: object
+      required: [productId, variantId, discountPercent, minQuantity, maxDiscountAmount]
+      properties:
+        productId:
+          $ref: '#/components/schemas/UUID'
+        variantId:
+          type: string
+          format: uuid
+          nullable: true
+        discountPercent:
+          $ref: '#/components/schemas/Percentage'
+        minQuantity:
+          type: integer
+        maxDiscountAmount:
+          type: string
+          pattern: '^[0-9]+$'
+          nullable: true
+
+    ProductPromotionRuleResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/ProductPromotionRule'
+
+    ProductPromotionRulePaginatedResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductPromotionRule'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    OrderPromotionRule:
+      allOf:
+        - $ref: '#/components/schemas/EntityMetadata'
+        - type: object
+          required: [promotionId, minOrderAmount, discountPercent, maxDiscountAmount]
+          properties:
+            promotionId:
+              $ref: '#/components/schemas/UUID'
+            minOrderAmount:
+              $ref: '#/components/schemas/Money'
+            discountPercent:
+              $ref: '#/components/schemas/Percentage'
+            maxDiscountAmount:
+              type: string
+              pattern: '^[0-9]+$'
+              nullable: true
+
+    OrderPromotionRuleInput:
+      type: object
+      required: [minOrderAmount, discountPercent, maxDiscountAmount]
+      properties:
+        minOrderAmount:
+          $ref: '#/components/schemas/Money'
+        discountPercent:
+          $ref: '#/components/schemas/Percentage'
+        maxDiscountAmount:
+          type: string
+          pattern: '^[0-9]+$'
+          nullable: true
+
+    OrderPromotionRuleResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/OrderPromotionRule'
+
+    OrderPromotionRulePaginatedResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderPromotionRule'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    Voucher:
+      allOf:
+        - $ref: '#/components/schemas/EntityMetadata'
+        - type: object
+          required: [promotionId, code, discountPercent, minOrderAmount, maxDiscountAmount, maxUses, usedCount, reservedCount, perCustomerLimit, status]
+          properties:
+            promotionId:
+              $ref: '#/components/schemas/UUID'
+            code:
+              type: string
+            discountPercent:
+              $ref: '#/components/schemas/Percentage'
+            minOrderAmount:
+              $ref: '#/components/schemas/Money'
+            maxDiscountAmount:
+              type: string
+              pattern: '^[0-9]+$'
+              nullable: true
+            maxUses:
+              type: integer
+              nullable: true
+            usedCount:
+              type: integer
+            reservedCount:
+              type: integer
+            perCustomerLimit:
+              type: integer
+            status:
+              $ref: '#/components/schemas/ActiveStatus'
+
+    VoucherInput:
+      type: object
+      required: [code, discountPercent, minOrderAmount, maxDiscountAmount, maxUses, perCustomerLimit, status]
+      properties:
+        code:
+          type: string
+        discountPercent:
+          $ref: '#/components/schemas/Percentage'
+        minOrderAmount:
+          $ref: '#/components/schemas/Money'
+        maxDiscountAmount:
+          type: string
+          pattern: '^[0-9]+$'
+          nullable: true
+        maxUses:
+          type: integer
+          nullable: true
+        perCustomerLimit:
+          type: integer
+        status:
+          $ref: '#/components/schemas/ActiveStatus'
+
+    VoucherResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/Voucher'
+
+    VoucherPaginatedResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Voucher'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # Reports & Dashboard
+    ReportMetric:
+      type: object
+      required: [key, label, value, unit]
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        value:
+          type: string
+        unit:
+          $ref: '#/components/schemas/ReportMetricUnit'
+
+    ReportSeriesPoint:
+      type: object
+      required: [period, value]
+      properties:
+        period:
+          type: string
+        value:
+          type: string
+
+    ReportSeries:
+      type: object
+      required: [key, name, unit, points]
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+        unit:
+          $ref: '#/components/schemas/ReportMetricUnit'
+        points:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportSeriesPoint'
+
+    ReportColumn:
+      type: object
+      required: [key, label, type]
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        type:
+          $ref: '#/components/schemas/ReportColumnType'
+
+    ReportRow:
+      type: object
+      required: [key, values, sourceType, sourceId]
+      properties:
+        key:
+          type: string
+        values:
+          type: object
+          additionalProperties:
+            oneOf:
+              - type: string
+              - type: number
+              - type: 'null'
+        sourceType:
+          allOf:
+            - $ref: '#/components/schemas/ReportSourceType'
+          nullable: true
+        sourceId:
+          type: string
+          format: uuid
+          nullable: true
+
+    ReportData:
+      type: object
+      required: [metrics, series, columns, rows, meta]
+      properties:
+        metrics:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportMetric'
+        series:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportSeries'
+        columns:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportColumn'
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportRow'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    ReportDataResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/ReportData'

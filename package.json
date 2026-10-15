@@ -1,0 +1,17 @@
+{
+  "name": "halora-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Halora Cosmetics - Admin Web & Mobile Frontend System",
+  "scripts": {
+    "build": "pnpm -r --filter=!./apps/mobile run build",
+    "build:all": "pnpm -r run build",
+    "typecheck": "pnpm -r run typecheck",
+    "lint": "pnpm -r run lint",
+    "dev:admin": "pnpm --filter @halora/admin dev",
+    "dev:mobile": "pnpm --filter @halora/mobile start"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}
