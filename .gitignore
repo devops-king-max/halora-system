@@ -24,3 +24,6 @@ Thumbs.db
 .idea/
 .vscode/*.local.json
 powershell.cmd
+.local/
+test-results/
+playwright-report/

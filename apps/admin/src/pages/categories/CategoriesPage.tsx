@@ -252,7 +252,7 @@ export const CategoriesPage: React.FC = () => {
           <Title level={4} style={{ margin: 0 }}>
             Quản lý loại sản phẩm
           </Title>
-          <Text type="secondary">Phân loại và danh mục danh mục sản phẩm của hệ thống mỹ phẩm</Text>
+          <Text type="secondary">Quản lý loại sản phẩm của hệ thống mỹ phẩm</Text>
         </div>
 
         <PermissionGuard permission="categories.create">

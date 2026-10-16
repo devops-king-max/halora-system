@@ -7,7 +7,6 @@ import {
   Dropdown,
   Typography,
   Tag,
-  Space,
   Button,
 } from "antd";
 import type { MenuProps } from "antd";
@@ -102,7 +101,7 @@ export const AdminLayout: React.FC = () => {
     },
     {
       type: "group",
-      label: "DANH MỤC & SẢN PHẨM",
+      label: "LOẠI SẢN PHẨM & SẢN PHẨM",
       children: [
         hasPermission("categories.read") && {
           key: "/categories",
@@ -241,7 +240,7 @@ export const AdminLayout: React.FC = () => {
         />
       </Sider>
 
-      <Layout>
+      <Layout style={{ minWidth: 0 }}>
         <Header
           style={{
             background: "#fff",
@@ -249,6 +248,8 @@ export const AdminLayout: React.FC = () => {
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
+            gap: 16,
+            lineHeight: "normal",
             borderBottom: "1px solid #f0f0f0",
           }}
         >
@@ -256,37 +257,49 @@ export const AdminLayout: React.FC = () => {
             type="text"
             icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
             onClick={() => setCollapsed(!collapsed)}
-            style={{ fontSize: "16px", width: 48, height: 48 }}
+            style={{ fontSize: "16px", width: 48, height: 48, flexShrink: 0 }}
           />
 
-          <Space size="middle">
-            <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" arrow>
-              <div
+            <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" trigger={["click"]} arrow>
+              <button
+                type="button"
+                aria-label="Mở menu tài khoản"
                 style={{
                   display: "flex",
                   alignItems: "center",
                   gap: 10,
+                  minWidth: 0,
+                  maxWidth: "calc(100% - 64px)",
                   cursor: "pointer",
                   padding: "4px 8px",
                   borderRadius: 6,
+                  border: 0,
+                  background: "transparent",
+                  color: "inherit",
+                  font: "inherit",
+                  lineHeight: "normal",
+                  textAlign: "left",
                 }}
               >
-                <Avatar style={{ backgroundColor: "#c05c74" }} icon={<UserOutlined />} />
-                <div style={{ display: "flex", flexDirection: "column" }}>
-                  <Text strong style={{ fontSize: 13, lineHeight: 1.2 }}>
+                <Avatar style={{ backgroundColor: "#c05c74", flexShrink: 0 }} icon={<UserOutlined />} />
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
+                  <Text
+                    strong
+                    title={principal?.displayName || principal?.username}
+                    style={{ fontSize: 13, lineHeight: "18px", maxWidth: 240, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                  >
                     {principal?.displayName || principal?.username || "Nhân viên"}
                   </Text>
-                  <Space size={4}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, height: 20 }}>
                     {principal?.roles?.slice(0, 2).map((role) => (
-                      <Tag key={role} color="magenta" style={{ fontSize: 10, margin: 0, padding: "0 4px" }}>
+                      <Tag key={role} color="magenta" style={{ fontSize: 10, lineHeight: "18px", margin: 0, padding: "0 4px" }}>
                         {role}
                       </Tag>
                     ))}
-                  </Space>
+                  </div>
                 </div>
-              </div>
+              </button>
             </Dropdown>
-          </Space>
         </Header>
 
         <Content style={{ margin: "24px 24px 0", overflow: "initial" }}>

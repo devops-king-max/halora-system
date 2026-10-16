@@ -74,6 +74,7 @@ export default function RootLayout() {
               name="change-password"
               options={{ title: "Đổi mật khẩu" }}
             />
+            <Stack.Screen name="profile" options={{ title: "Thông tin cá nhân" }} />
           </Stack>
         </AuthProvider>
       </PaperProvider>

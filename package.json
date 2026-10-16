@@ -2,14 +2,25 @@
   "name": "halora-monorepo",
   "version": "1.0.0",
   "private": true,
-  "description": "Halora Cosmetics - Admin Web & Mobile Frontend System",
+  "description": "Halora Cosmetics - Admin, Mobile, NestJS API and PostgreSQL",
+  "packageManager": "pnpm@11.25.0",
   "scripts": {
+    "setup:local": "node infra/scripts/setup-local.mjs",
     "build": "pnpm -r --filter=!./apps/mobile run build",
     "build:all": "pnpm -r run build",
     "typecheck": "pnpm -r run typecheck",
     "lint": "pnpm -r run lint",
     "dev:admin": "pnpm --filter @halora/admin dev",
-    "dev:mobile": "pnpm --filter @halora/mobile start"
+    "dev:mobile": "pnpm --filter @halora/mobile start",
+    "dev:api": "pnpm --filter @halora/api dev",
+    "db:migrate": "pnpm --filter @halora/api db:migrate",
+    "db:bootstrap": "pnpm --filter @halora/api db:bootstrap",
+    "db:bootstrap:docker": "pnpm --filter @halora/api db:bootstrap:docker",
+    "db:export-schema": "pnpm --filter @halora/api db:export-schema",
+    "db:verify-schema": "pnpm --filter @halora/api db:verify-schema",
+    "db:backup:docker": "pnpm --filter @halora/api db:backup:docker",
+    "db:restore-check:docker": "pnpm --filter @halora/api db:restore-check:docker",
+    "test": "pnpm --filter @halora/api test"
   },
   "devDependencies": {
     "typescript": "^5.7.3"

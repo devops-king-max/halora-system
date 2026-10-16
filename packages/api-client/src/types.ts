@@ -117,6 +117,23 @@ export interface StaffAuthResult {
   principal: Principal;
 }
 
+export interface AccountProfile {
+  accountId: UUID;
+  realm: AccountRealm;
+  username: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  version: number;
+}
+
+export interface AccountProfileUpdateInput {
+  fullName: string;
+  email: string;
+  phone: string;
+  version: number;
+}
+
 export interface CustomerAuthResult extends StaffAuthResult {
   refreshToken: string;
 }

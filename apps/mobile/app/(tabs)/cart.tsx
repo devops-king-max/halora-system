@@ -130,10 +130,8 @@ export default function CartScreen() {
 
   // Selected subtotal calculation
   const selectedItems = items.filter((i: CartItem) => selectedItemIds[i.id]);
-  const selectedTotal = selectedItems.reduce((acc: number, curr: CartItem) => {
-    const unit = parseInt(curr.unitPrice, 10) || 0;
-    return acc + unit * curr.quantity;
-  }, 0);
+  const selectedTotal = selectedItems.reduce((acc: bigint, curr: CartItem) =>
+    acc + BigInt(curr.unitPrice) * BigInt(curr.quantity), BigInt(0));
 
   const isAllSelected = items.length > 0 && items.every((i: CartItem) => selectedItemIds[i.id]);
 

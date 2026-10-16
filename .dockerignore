@@ -15,3 +15,6 @@ backups
 **/*.backup
 .DS_Store
 Thumbs.db
+.local
+test-results
+playwright-report

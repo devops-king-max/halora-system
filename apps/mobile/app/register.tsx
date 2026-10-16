@@ -9,12 +9,13 @@ import { useAuth } from "../src/AuthContext";
 
 const registerSchema = z.object({
   fullName: z.string().min(2, "Họ tên tối thiểu 2 ký tự"),
+  username: z.string().min(3, "Tên đăng nhập tối thiểu 3 ký tự").max(64).regex(/^[a-zA-Z0-9_.-]+$/, "Chỉ dùng chữ không dấu, số, dấu chấm, gạch dưới hoặc gạch ngang"),
   email: z.string().email("Email không đúng định dạng"),
   phone: z
     .string()
     .min(10, "Số điện thoại tối thiểu 10 số")
     .regex(/^[0-9+]+$/, "Số điện thoại không hợp lệ"),
-  password: z.string().min(6, "Mật khẩu tối thiểu 6 ký tự"),
+  password: z.string().min(10, "Mật khẩu tối thiểu 10 ký tự").max(128),
 });
 
 type RegisterFormData = z.infer<typeof registerSchema>;
@@ -33,6 +34,7 @@ export default function RegisterScreen() {
     resolver: zodResolver(registerSchema),
     defaultValues: {
       fullName: "",
+      username: "",
       email: "",
       phone: "",
       password: "",
@@ -88,6 +90,16 @@ export default function RegisterScreen() {
           <Text style={styles.errorText}>{errors.fullName.message}</Text>
         )}
 
+        <Controller
+          control={control}
+          name="username"
+          render={({ field: { onChange, onBlur, value } }) => (
+            <TextInput mode="outlined" label="Tên đăng nhập *" autoCapitalize="none"
+              onBlur={onBlur} onChangeText={onChange} value={value}
+              error={!!errors.username} style={styles.input} />
+          )}
+        />
+        {errors.username && <Text style={styles.errorText}>{errors.username.message}</Text>}
         <Controller
           control={control}
           name="email"

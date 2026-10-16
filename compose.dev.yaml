@@ -1,0 +1,42 @@
+services:
+  db:
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+  mailpit:
+    ports:
+      - "127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025"
+  api:
+    image: halora-api:development
+    build:
+      target: development
+    environment:
+      NODE_ENV: development
+      PUBLIC_BASE_URL: ${DEV_PUBLIC_BASE_URL:-http://localhost:3000}
+      STAFF_RESET_URL: http://localhost:5173/reset-password
+      TRUST_PROXY: "false"
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "500"
+    ports:
+      - "${DEV_BIND_HOST:-127.0.0.1}:3000:3000"
+    volumes:
+      - ./apps/api/src:/app/apps/api/src
+      - ./apps/api/scripts:/app/apps/api/scripts
+      - ./docs/api:/app/docs/api:ro
+      - ./database:/app/database:ro
+  admin:
+    build:
+      target: development
+    environment:
+      API_PROXY_TARGET: http://api:3000
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "500"
+    ports: !override
+      - "127.0.0.1:5173:5173"
+    volumes:
+      - ./apps/admin/src:/app/apps/admin/src
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:5173/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s

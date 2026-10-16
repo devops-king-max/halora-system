@@ -210,7 +210,7 @@ export const SuppliersPage: React.FC = () => {
       width: 130,
       render: (_: unknown, record: Supplier) => (
         <Space size="small">
-          <Tooltip title="Xem chi tiết & danh mục cung ứng">
+          <Tooltip title="Xem chi tiết và sản phẩm cung ứng">
             <Button
               type="text"
               size="small"

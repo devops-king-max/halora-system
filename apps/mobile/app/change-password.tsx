@@ -6,12 +6,13 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiClient } from "../src/api";
+import { useAuth } from "../src/AuthContext";
 
 const changePasswordSchema = z
   .object({
     currentPassword: z.string().min(1, "Vui lòng nhập mật khẩu hiện tại"),
-    newPassword: z.string().min(6, "Mật khẩu mới tối thiểu 6 ký tự"),
-    confirmPassword: z.string().min(6, "Vui lòng xác nhận mật khẩu"),
+    newPassword: z.string().min(10, "Mật khẩu mới tối thiểu 10 ký tự").max(128),
+    confirmPassword: z.string().min(10, "Vui lòng xác nhận mật khẩu").max(128),
   })
   .refine((data) => data.newPassword === data.confirmPassword, {
     message: "Mật khẩu xác nhận không khớp",
@@ -22,6 +23,7 @@ type ChangePasswordFormData = z.infer<typeof changePasswordSchema>;
 
 export default function ChangePasswordScreen() {
   const router = useRouter();
+  const { logout } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
@@ -43,8 +45,9 @@ export default function ChangePasswordScreen() {
     setIsSubmitting(true);
     try {
       await apiClient.auth.changePassword(data.currentPassword, data.newPassword);
+      await logout();
       Alert.alert("Thành công", "Mật khẩu của bạn đã được thay đổi thành công.", [
-        { text: "OK", onPress: () => router.back() },
+        { text: "Đăng nhập lại", onPress: () => router.replace("/login") },
       ]);
     } catch (err: any) {
       Alert.alert(

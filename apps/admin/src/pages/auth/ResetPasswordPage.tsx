@@ -104,7 +104,7 @@ export const ResetPasswordPage: React.FC = () => {
             label="Mật khẩu mới"
             rules={[
               { required: true, message: "Vui lòng nhập mật khẩu mới" },
-              { min: 6, message: "Mật khẩu tối thiểu 6 ký tự" },
+              { min: 10, max: 128, message: "Mật khẩu từ 10 đến 128 ký tự" },
             ]}
           >
             <Input.Password

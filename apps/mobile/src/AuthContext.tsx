@@ -14,6 +14,7 @@ interface CustomerLoginInput {
 
 interface CustomerRegisterInput {
   fullName: string;
+  username: string;
   email: string;
   phone: string;
   password: string;
@@ -74,11 +75,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const register = async (data: CustomerRegisterInput) => {
-    // Generate username from email or phone
-    const username = data.email.split("@")[0].toLowerCase().replace(/[^a-z0-9]/g, "");
     await apiClient.auth.customerRegister({
       fullName: data.fullName,
-      username: username || `user_${Date.now()}`,
+      username: data.username,
       email: data.email,
       phone: data.phone,
       password: data.password,

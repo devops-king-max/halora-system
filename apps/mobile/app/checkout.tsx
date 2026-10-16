@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import * as Crypto from "expo-crypto";
 import {
   View,
   ScrollView,
@@ -26,6 +27,7 @@ import {
   CheckoutItemInput,
   CartItem,
   OrderDetail,
+  ApiClientError,
 } from "@halora/api-client";
 
 export default function CheckoutScreen() {
@@ -41,6 +43,7 @@ export default function CheckoutScreen() {
   const [voucherCode, setVoucherCode] = useState("");
   const [appliedVoucher, setAppliedVoucher] = useState("");
   const [customerNote, setCustomerNote] = useState("");
+  const orderAttempt = useRef<{ fingerprint: string; key: string } | null>(null);
 
   // 1. Fetch addresses
   const {
@@ -113,9 +116,11 @@ export default function CheckoutScreen() {
       if (!quote?.quoteToken) {
         throw new Error("Không có phiên báo giá hợp lệ từ máy chủ.");
       }
-      const idempotencyKey = `halora-order-${Date.now()}-${Math.random()
-        .toString(36)
-        .substring(2, 9)}`;
+      const fingerprint = JSON.stringify({ checkoutItems, selectedAddressId, paymentMethod, appliedVoucher, customerNote, quoteToken: quote.quoteToken });
+      if (orderAttempt.current?.fingerprint !== fingerprint) {
+        orderAttempt.current = { fingerprint, key: Crypto.randomUUID() };
+      }
+      const idempotencyKey = orderAttempt.current.key;
 
       return apiClient.orders.create(
         {
@@ -130,6 +135,7 @@ export default function CheckoutScreen() {
       );
     },
     onSuccess: (order: OrderDetail) => {
+      orderAttempt.current = null;
       queryClient.invalidateQueries({ queryKey: ["mobile-cart"] });
       queryClient.invalidateQueries({ queryKey: ["customer-orders"] });
       Alert.alert(
@@ -143,10 +149,14 @@ export default function CheckoutScreen() {
         ]
       );
     },
-    onError: (err: any) => {
+    onError: (err: unknown) => {
+      if (err instanceof ApiClientError && ["QUOTE_EXPIRED", "QUOTE_CHANGED"].includes(err.code)) {
+        orderAttempt.current = null;
+        refetchQuote();
+      }
       Alert.alert(
         "Đặt hàng thất bại",
-        err?.message || "Không thể hoàn tất đơn hàng. Vui lòng kiểm tra lại."
+        err instanceof Error ? err.message : "Không thể hoàn tất đơn hàng. Vui lòng kiểm tra lại."
       );
     },
   });

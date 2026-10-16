@@ -1,5 +1,7 @@
 import type {
   Account,
+  AccountProfile,
+  AccountProfileUpdateInput,
   AccountRealm,
   AccountStatusUpdateInput,
   ActionInput,
@@ -78,7 +80,7 @@ import type {
   VariantInput,
   Voucher,
   VoucherInput,
-} from "./types";
+} from "./types.js";
 
 export class ApiClientError extends Error {
   readonly code: string;
@@ -128,6 +130,8 @@ export class HaloraApiClient {
   private readonly onUnauthenticatedFn?: () => void;
 
   private refreshPromise: Promise<string | null> | null = null;
+  private staffRefreshPromise: Promise<StaffAuthResult> | null = null;
+  private customerRefreshPromise: Promise<CustomerAuthResult> | null = null;
 
   constructor(config: ApiClientConfig) {
     this.baseUrl = config.baseUrl.replace(/\/+$/, "");
@@ -188,40 +192,14 @@ export class HaloraApiClient {
     this.refreshPromise = (async () => {
       try {
         if (this.realm === "STAFF") {
-          // Staff refresh uses HttpOnly cookies
-          const res = await fetch(`${this.baseUrl}/auth/staff/refresh`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-          });
-          if (!res.ok) {
-            throw new Error("Staff refresh failed");
-          }
-          const json = (await res.json()) as ApiResponse<StaffAuthResult>;
-          const newToken = json.data.accessToken;
-          this.setAccessToken(newToken);
-          return newToken;
+          return (await this.auth.staffRefresh()).accessToken;
         } else {
           // Customer refresh uses stored refreshToken
           const refreshToken = await this.getRefreshToken();
           if (!refreshToken) {
             throw new Error("No refresh token available");
           }
-          const res = await fetch(`${this.baseUrl}/auth/customer/refresh`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ refreshToken }),
-          });
-          if (!res.ok) {
-            throw new Error("Customer refresh failed");
-          }
-          const json = (await res.json()) as ApiResponse<CustomerAuthResult>;
-          const newToken = json.data.accessToken;
-          this.setAccessToken(newToken);
-          if (json.data.refreshToken) {
-            await this.setRefreshToken(json.data.refreshToken);
-          }
-          return newToken;
+          return (await this.auth.customerRefresh(refreshToken)).accessToken;
         }
       } catch (err) {
         this.setAccessToken(null);
@@ -295,7 +273,7 @@ export class HaloraApiClient {
     }
 
     // Single 401 automatic retry with refresh deduplication
-    if (response.status === 401 && requiresAuth && !path.includes("/auth/")) {
+    if (response.status === 401 && requiresAuth && (!path.includes("/auth/") || path === "/auth/profile")) {
       const refreshedToken = await this.performRefresh();
       if (refreshedToken) {
         try {
@@ -384,25 +362,29 @@ export class HaloraApiClient {
     },
 
     staffRefresh: async (): Promise<StaffAuthResult> => {
-      const res = await this.request<ApiResponse<StaffAuthResult>>("/auth/staff/refresh", {
+      if (this.staffRefreshPromise) return this.staffRefreshPromise;
+      this.staffRefreshPromise = this.request<ApiResponse<StaffAuthResult>>("/auth/staff/refresh", {
         method: "POST",
         requiresAuth: false,
-      });
-      this.setAccessToken(res.data.accessToken);
-      return res.data;
+      }).then(res => {
+        this.setAccessToken(res.data.accessToken);
+        return res.data;
+      }).finally(() => { this.staffRefreshPromise = null; });
+      return this.staffRefreshPromise;
     },
 
     customerRefresh: async (refreshToken: string): Promise<CustomerAuthResult> => {
-      const res = await this.request<ApiResponse<CustomerAuthResult>>("/auth/customer/refresh", {
+      if (this.customerRefreshPromise) return this.customerRefreshPromise;
+      this.customerRefreshPromise = this.request<ApiResponse<CustomerAuthResult>>("/auth/customer/refresh", {
         method: "POST",
         body: { refreshToken },
         requiresAuth: false,
-      });
-      this.setAccessToken(res.data.accessToken);
-      if (res.data.refreshToken) {
-        await this.setRefreshToken(res.data.refreshToken);
-      }
-      return res.data;
+      }).then(async res => {
+        this.setAccessToken(res.data.accessToken);
+        if (res.data.refreshToken) await this.setRefreshToken(res.data.refreshToken);
+        return res.data;
+      }).finally(() => { this.customerRefreshPromise = null; });
+      return this.customerRefreshPromise;
     },
 
     staffLogout: async (): Promise<{ message: string }> => {
@@ -438,6 +420,13 @@ export class HaloraApiClient {
       });
       return res.data;
     },
+
+    getProfile: () => this.request<ApiResponse<AccountProfile>>("/auth/profile", { method: "GET" }).then(r => r.data),
+
+    updateProfile: (input: AccountProfileUpdateInput) => this.request<ApiResponse<AccountProfile>>("/auth/profile", {
+      method: "PATCH",
+      body: input,
+    }).then(r => r.data),
 
     changePassword: async (currentPassword: string, newPassword: string): Promise<{ message: string }> => {
       const res = await this.request<ApiResponse<{ message: string }>>("/auth/change-password", {

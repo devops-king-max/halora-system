@@ -1,0 +1,13 @@
+import { execFileSync } from 'node:child_process';
+import { writeFileSync,existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { databaseUrl,root } from '../src/core/config';
+const target=new URL(databaseUrl());
+const executable=process.env.PG_DUMP_PATH || (process.platform==='win32'&&existsSync('C:/Program Files/PostgreSQL/18/bin/pg_dump.exe')?'C:/Program Files/PostgreSQL/18/bin/pg_dump.exe':'pg_dump');
+const args=['--host',target.hostname,'--port',target.port||'5432','--username',decodeURIComponent(target.username),'--dbname',decodeURIComponent(target.pathname.slice(1)),'--no-owner','--no-privileges'];
+const options={env:{...process.env,PGPASSWORD:decodeURIComponent(target.password)},encoding:'utf8' as const,maxBuffer:16*1024*1024};
+const schema=execFileSync(executable,[...args,'--schema-only'],options);
+const access=execFileSync(executable,[...args,'--data-only','--inserts','--table=roles','--table=permissions','--table=role_permissions','--table=pgmigrations'],options);
+const result=(schema+'\n-- System access control and migration baseline; no accounts or business data.\n'+access+'\nSELECT setval(pg_get_serial_sequence(\'public.pgmigrations\',\'id\'), (SELECT max(id) FROM public.pgmigrations), true);\n').replace(/^\\(?:un)?restrict .*\r?\n/gm,'');
+writeFileSync(resolve(root,'database/schema.sql'),'-- Halora PostgreSQL 18: install once into an empty database.\n-- Existing databases must use versioned migrations.\n'+result+'\nSET search_path = public;\n');
+console.log('Exported database/schema.sql (schema + system access control + migration baseline only).');

@@ -2,8 +2,10 @@
 import { HaloraApiClient } from "@halora/api-client";
 import { QueryClient } from "@tanstack/react-query";
 
-const apiBaseUrl =
-  (import.meta.env.VITE_API_BASE_URL as string) || "http://localhost:3000/api/v1";
+const apiBaseUrl = new URL(
+  (import.meta.env.VITE_API_BASE_URL as string) || "/api/v1",
+  window.location.origin,
+).toString();
 
 export const queryClient = new QueryClient({
   defaultOptions: {

@@ -291,7 +291,7 @@ export const ProductsPage: React.FC = () => {
           <Title level={4} style={{ margin: 0 }}>
             Quản lý sản phẩm
           </Title>
-          <Text type="secondary">Danh mục mỹ phẩm và thông tin sản phẩm trên toàn hệ thống</Text>
+          <Text type="secondary">Các sản phẩm mỹ phẩm và thông tin trên toàn hệ thống</Text>
         </div>
 
         <PermissionGuard permission="products.create">

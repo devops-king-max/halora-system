@@ -294,7 +294,7 @@ export default function ProductDetailScreen() {
                   Tạm tính:
                 </Text>
                 <Text variant="titleLarge" style={styles.bottomPriceValue}>
-                  {formatVnd(parseInt(currentPrice, 10) * quantity)}
+                  {formatVnd(BigInt(currentPrice) * BigInt(quantity))}
                 </Text>
               </View>
 

@@ -24,6 +24,8 @@ paths:
                   type: string
                   description: Username or email
                 password:
+                  minLength: 1
+                  maxLength: 128
                   type: string
       responses:
         '200':
@@ -51,6 +53,8 @@ paths:
                   type: string
                   description: Username or email
                 password:
+                  minLength: 1
+                  maxLength: 128
                   type: string
       responses:
         '200':
@@ -84,6 +88,8 @@ paths:
                 phone:
                   type: string
                 password:
+                  minLength: 10
+                  maxLength: 128
                   type: string
       responses:
         '201':
@@ -200,6 +206,46 @@ paths:
         '401':
           $ref: '#/components/responses/ErrorResponse'
 
+  /auth/profile:
+    get:
+      tags: [Auth]
+      summary: Get own personal profile for staff or customer, including administrators
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Own personal profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountProfileResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+    patch:
+      tags: [Auth]
+      summary: Update own full name, email and phone without staff management permissions
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountProfileUpdateInput'
+      responses:
+        '200':
+          description: Updated personal profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountProfileResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+
   /auth/change-password:
     post:
       tags: [Auth]
@@ -217,6 +263,8 @@ paths:
                 currentPassword:
                   type: string
                 newPassword:
+                  minLength: 10
+                  maxLength: 128
                   type: string
       responses:
         '200':
@@ -289,6 +337,8 @@ paths:
                 token:
                   type: string
                 newPassword:
+                  minLength: 10
+                  maxLength: 128
                   type: string
       responses:
         '200':
@@ -315,6 +365,8 @@ paths:
                 token:
                   type: string
                 newPassword:
+                  minLength: 10
+                  maxLength: 128
                   type: string
       responses:
         '200':
@@ -343,6 +395,7 @@ paths:
         - $ref: '#/components/parameters/SortOrderQuery'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -364,6 +417,7 @@ paths:
         - $ref: '#/components/parameters/SortOrderQuery'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -409,6 +463,7 @@ paths:
         - $ref: '#/components/parameters/SortOrderQuery'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -426,6 +481,7 @@ paths:
             $ref: '#/components/schemas/UUID'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -442,6 +498,7 @@ paths:
         - bearerAuth: []
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -469,6 +526,7 @@ paths:
                   type: integer
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -484,6 +542,7 @@ paths:
         - bearerAuth: []
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -501,6 +560,7 @@ paths:
               $ref: '#/components/schemas/CustomerAddressInput'
       responses:
         '201':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -526,6 +586,7 @@ paths:
               $ref: '#/components/schemas/CustomerAddressUpdateInput'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -555,6 +616,7 @@ paths:
         - bearerAuth: []
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -581,6 +643,7 @@ paths:
                   minimum: 1
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -627,6 +690,7 @@ paths:
                   type: integer
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -667,6 +731,7 @@ paths:
               $ref: '#/components/schemas/CheckoutQuoteInput'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -690,6 +755,7 @@ paths:
               $ref: '#/components/schemas/CreateOrderInput'
       responses:
         '201':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -719,6 +785,7 @@ paths:
         - $ref: '#/components/parameters/LimitQuery'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -738,6 +805,7 @@ paths:
             $ref: '#/components/schemas/UUID'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -763,6 +831,7 @@ paths:
               $ref: '#/components/schemas/UpdatePendingOrderInput'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -790,6 +859,7 @@ paths:
               $ref: '#/components/schemas/OrderCancelInput'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -820,6 +890,7 @@ paths:
         - $ref: '#/components/parameters/SortOrderQuery'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -837,6 +908,7 @@ paths:
               $ref: '#/components/schemas/CategoryInput'
       responses:
         '201':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -856,6 +928,7 @@ paths:
             $ref: '#/components/schemas/UUID'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -885,6 +958,7 @@ paths:
                       type: integer
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -934,6 +1008,7 @@ paths:
         - $ref: '#/components/parameters/SortOrderQuery'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -951,6 +1026,7 @@ paths:
               $ref: '#/components/schemas/BrandInput'
       responses:
         '201':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -970,6 +1046,7 @@ paths:
             $ref: '#/components/schemas/UUID'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -999,6 +1076,7 @@ paths:
                       type: integer
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1060,6 +1138,7 @@ paths:
         - $ref: '#/components/parameters/SortOrderQuery'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1077,6 +1156,7 @@ paths:
               $ref: '#/components/schemas/ProductInput'
       responses:
         '201':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1096,6 +1176,7 @@ paths:
             $ref: '#/components/schemas/UUID'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1125,6 +1206,7 @@ paths:
                       type: integer
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1168,6 +1250,7 @@ paths:
         - $ref: '#/components/parameters/LimitQuery'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1191,6 +1274,7 @@ paths:
               $ref: '#/components/schemas/VariantInput'
       responses:
         '201':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1227,6 +1311,7 @@ paths:
                       type: integer
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1267,6 +1352,7 @@ paths:
             $ref: '#/components/schemas/UUID'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1290,6 +1376,7 @@ paths:
               $ref: '#/components/schemas/ProductImageInput'
       responses:
         '201':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1333,6 +1420,7 @@ paths:
                   type: integer
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1378,6 +1466,7 @@ paths:
                   format: binary
       responses:
         '201':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1409,6 +1498,7 @@ paths:
         - $ref: '#/components/parameters/SortOrderQuery'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1428,6 +1518,7 @@ paths:
             $ref: '#/components/schemas/UUID'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1461,6 +1552,7 @@ paths:
                   type: integer
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1498,6 +1590,7 @@ paths:
             $ref: '#/components/schemas/UUID'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1519,6 +1612,7 @@ paths:
         - $ref: '#/components/parameters/LimitQuery'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1546,6 +1640,7 @@ paths:
         - $ref: '#/components/parameters/SortOrderQuery'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1563,6 +1658,7 @@ paths:
               $ref: '#/components/schemas/EmployeeInput'
       responses:
         '201':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1582,6 +1678,7 @@ paths:
             $ref: '#/components/schemas/UUID'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1611,6 +1708,7 @@ paths:
                       type: integer
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1652,6 +1750,7 @@ paths:
               $ref: '#/components/schemas/EmployeeAccountInput'
       responses:
         '201':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1677,6 +1776,7 @@ paths:
               $ref: '#/components/schemas/EmployeeRoleAssignInput'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1710,6 +1810,7 @@ paths:
         - $ref: '#/components/parameters/SortOrderQuery'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1729,6 +1830,7 @@ paths:
             $ref: '#/components/schemas/UUID'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1752,6 +1854,7 @@ paths:
               $ref: '#/components/schemas/AccountStatusUpdateInput'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1767,6 +1870,7 @@ paths:
         - bearerAuth: []
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1792,6 +1896,7 @@ paths:
               $ref: '#/components/schemas/RolePermissionAssignInput'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1807,6 +1912,7 @@ paths:
         - bearerAuth: []
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1834,6 +1940,7 @@ paths:
         - $ref: '#/components/parameters/SortOrderQuery'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1851,6 +1958,7 @@ paths:
               $ref: '#/components/schemas/SupplierInput'
       responses:
         '201':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1870,6 +1978,7 @@ paths:
             $ref: '#/components/schemas/UUID'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1899,6 +2008,7 @@ paths:
                       type: integer
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1936,6 +2046,7 @@ paths:
         - $ref: '#/components/parameters/LimitQuery'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1959,6 +2070,7 @@ paths:
               $ref: '#/components/schemas/SupplierVariantInput'
       responses:
         '201':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -1997,6 +2109,7 @@ paths:
                   type: integer
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2057,6 +2170,7 @@ paths:
         - $ref: '#/components/parameters/SortOrderQuery'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2074,6 +2188,7 @@ paths:
               $ref: '#/components/schemas/GoodsReceiptInput'
       responses:
         '201':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2093,6 +2208,7 @@ paths:
             $ref: '#/components/schemas/UUID'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2122,6 +2238,7 @@ paths:
                       type: integer
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2164,6 +2281,7 @@ paths:
               $ref: '#/components/schemas/ActionInput'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2224,6 +2342,7 @@ paths:
         - $ref: '#/components/parameters/SortOrderQuery'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2262,6 +2381,7 @@ paths:
         - $ref: '#/components/parameters/SortOrderQuery'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2290,6 +2410,7 @@ paths:
             $ref: '#/components/schemas/ISODateTime'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2307,6 +2428,7 @@ paths:
               $ref: '#/components/schemas/InventoryAdjustmentInput'
       responses:
         '201':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2326,6 +2448,7 @@ paths:
             $ref: '#/components/schemas/UUID'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2355,6 +2478,7 @@ paths:
                       type: integer
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2397,6 +2521,7 @@ paths:
               $ref: '#/components/schemas/ActionInput'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2426,6 +2551,7 @@ paths:
         - $ref: '#/components/parameters/SortOrderQuery'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2443,6 +2569,7 @@ paths:
               $ref: '#/components/schemas/PromotionInput'
       responses:
         '201':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2462,6 +2589,7 @@ paths:
             $ref: '#/components/schemas/UUID'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2491,6 +2619,7 @@ paths:
                       type: integer
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2528,6 +2657,7 @@ paths:
         - $ref: '#/components/parameters/LimitQuery'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2551,6 +2681,7 @@ paths:
               $ref: '#/components/schemas/ProductPromotionRuleInput'
       responses:
         '201':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2587,6 +2718,7 @@ paths:
                       type: integer
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2629,6 +2761,7 @@ paths:
         - $ref: '#/components/parameters/LimitQuery'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2652,6 +2785,7 @@ paths:
               $ref: '#/components/schemas/OrderPromotionRuleInput'
       responses:
         '201':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2688,6 +2822,7 @@ paths:
                       type: integer
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2730,6 +2865,7 @@ paths:
         - $ref: '#/components/parameters/LimitQuery'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2753,6 +2889,7 @@ paths:
               $ref: '#/components/schemas/VoucherInput'
       responses:
         '201':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2789,6 +2926,7 @@ paths:
                       type: integer
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2849,6 +2987,7 @@ paths:
         - $ref: '#/components/parameters/SortOrderQuery'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2868,6 +3007,7 @@ paths:
             $ref: '#/components/schemas/UUID'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2896,6 +3036,7 @@ paths:
               $ref: '#/components/schemas/ActionInput'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2923,6 +3064,7 @@ paths:
               $ref: '#/components/schemas/ActionInput'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2950,6 +3092,7 @@ paths:
               $ref: '#/components/schemas/ActionInput'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -2977,6 +3120,7 @@ paths:
               $ref: '#/components/schemas/OrderCancelInput'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -3004,6 +3148,7 @@ paths:
               $ref: '#/components/schemas/CreateOrderPaymentInput'
       responses:
         '201':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -3032,6 +3177,7 @@ paths:
               $ref: '#/components/schemas/PaymentActionInput'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -3059,6 +3205,7 @@ paths:
               $ref: '#/components/schemas/PaymentFailInput'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -3087,6 +3234,7 @@ paths:
               $ref: '#/components/schemas/PaymentActionInput'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -3114,6 +3262,7 @@ paths:
               $ref: '#/components/schemas/PaymentFailInput'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -3141,6 +3290,7 @@ paths:
               $ref: '#/components/schemas/CreateInvoiceInput'
       responses:
         '201':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -3178,6 +3328,7 @@ paths:
         - $ref: '#/components/parameters/SortOrderQuery'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -3197,6 +3348,7 @@ paths:
             $ref: '#/components/schemas/UUID'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -3220,6 +3372,7 @@ paths:
               $ref: '#/components/schemas/InvoiceUpdateInput'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -3261,6 +3414,7 @@ paths:
               $ref: '#/components/schemas/ActionInput'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -3289,6 +3443,7 @@ paths:
               $ref: '#/components/schemas/ActionInput'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -3340,6 +3495,7 @@ paths:
             $ref: '#/components/schemas/ISODateTime'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -3355,6 +3511,7 @@ paths:
         - $ref: '#/components/parameters/ReportCommonQueryParams'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -3370,6 +3527,7 @@ paths:
         - $ref: '#/components/parameters/ReportCommonQueryParams'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -3385,6 +3543,7 @@ paths:
         - $ref: '#/components/parameters/ReportCommonQueryParams'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -3400,6 +3559,7 @@ paths:
         - $ref: '#/components/parameters/ReportCommonQueryParams'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -3415,6 +3575,7 @@ paths:
         - $ref: '#/components/parameters/ReportCommonQueryParams'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -3430,6 +3591,7 @@ paths:
         - $ref: '#/components/parameters/ReportCommonQueryParams'
       responses:
         '200':
+          description: Operation result
           content:
             application/json:
               schema:
@@ -3560,6 +3722,7 @@ components:
       type: string
       format: uuid
     Money:
+      maxLength: 18
       type: string
       pattern: '^[0-9]+$'
       description: Integer string in VND currency (e.g. 250000)
@@ -3718,6 +3881,57 @@ components:
           type: array
           items:
             type: string
+
+    AccountProfileUpdateInput:
+      type: object
+      additionalProperties: false
+      required: [fullName, email, phone, version]
+      properties:
+        fullName:
+          type: string
+          minLength: 1
+          maxLength: 255
+          pattern: '.*\S.*'
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        phone:
+          type: string
+          minLength: 1
+          maxLength: 255
+          pattern: '.*\S.*'
+        version:
+          type: integer
+          minimum: 1
+
+    AccountProfile:
+      type: object
+      required: [accountId, realm, username, fullName, email, phone, version]
+      properties:
+        accountId:
+          $ref: '#/components/schemas/UUID'
+        realm:
+          $ref: '#/components/schemas/AccountRealm'
+        username:
+          type: string
+        fullName:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+
+    AccountProfileResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/AccountProfile'
 
     PrincipalResponse:
       type: object
@@ -4363,6 +4577,8 @@ components:
           type: string
           format: email
         password:
+          minLength: 10
+          maxLength: 128
           type: string
 
     EmployeeRoleAssignInput:

@@ -225,7 +225,7 @@ export default function OrderDetailScreen() {
                   <View style={styles.summaryRow}>
                     <Text style={styles.summaryLabel}>Trạng thái thanh toán:</Text>
                     <StatusChip
-                      status={lastPayment?.status || (parseInt(order.paidAmount, 10) >= parseInt(order.totalAmount, 10) ? "PAID" : "PENDING")}
+                      status={lastPayment?.status || (BigInt(order.paidAmount) >= BigInt(order.totalAmount) ? "SUCCEEDED" : "PENDING")}
                       type="payment"
                     />
                   </View>

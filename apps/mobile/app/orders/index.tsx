@@ -20,7 +20,7 @@ const STATUS_FILTERS = [
   { key: "", label: "Tất cả" },
   { key: "PENDING_CONFIRMATION", label: "Chờ xác nhận" },
   { key: "CONFIRMED", label: "Đã xác nhận" },
-  { key: "DELIVERING", label: "Đang giao" },
+  { key: "SHIPPING", label: "Đang giao" },
   { key: "COMPLETED", label: "Hoàn tất" },
   { key: "CANCELLED", label: "Đã hủy" },
 ];

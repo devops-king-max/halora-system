@@ -29,8 +29,8 @@ export function StatusChip({ status, type = "order" }: StatusChipProps) {
 
   // Payment status
   const label = PAYMENT_STATUS_LABELS[status] || status;
-  const isPaid = status === "PAID";
-  const color = isPaid ? "#52c41a" : status === "REFUNDED" ? "#722ed1" : "#faad14";
+  const isPaid = status === "SUCCEEDED";
+  const color = isPaid ? "#52c41a" : status === "FAILED" ? "#f5222d" : status === "CANCELLED" ? "#6b7280" : "#faad14";
 
   return (
     <Chip

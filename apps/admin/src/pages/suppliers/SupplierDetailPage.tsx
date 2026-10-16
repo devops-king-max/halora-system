@@ -292,7 +292,7 @@ export const SupplierDetailPage: React.FC = () => {
             </Card>
 
             <Card
-              title={`Danh mục biến thể / SKU được cung ứng (${variantsData?.meta?.total || 0})`}
+              title={`Biến thể / SKU được cung ứng (${variantsData?.meta?.total || 0})`}
               bordered={false}
               extra={
                 <Button icon={<ReloadOutlined />} onClick={() => refetchVariants()}>

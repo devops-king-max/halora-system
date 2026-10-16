@@ -256,7 +256,7 @@ export const EmployeeDetailPage: React.FC = () => {
             label="Mật khẩu khởi tạo"
             rules={[
               { required: true, message: "Vui lòng nhập mật khẩu" },
-              { min: 6, message: "Mật khẩu tối thiểu 6 ký tự" },
+              { min: 10, max: 128, message: "Mật khẩu từ 10 đến 128 ký tự" },
             ]}
           >
             <Input.Password placeholder="••••••••" />

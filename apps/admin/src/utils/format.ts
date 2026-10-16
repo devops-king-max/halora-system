@@ -1,15 +1,6 @@
-export function formatVnd(amount: string | number | null | undefined): string {
-  if (amount === null || amount === undefined || amount === "") {
-    return "0 ₫";
-  }
-  const numeric = typeof amount === "string" ? parseInt(amount, 10) : amount;
-  if (isNaN(numeric)) {
-    return "0 ₫";
-  }
-  return new Intl.NumberFormat("vi-VN", {
-    style: "currency",
-    currency: "VND",
-  }).format(numeric);
+export function formatVnd(amount: string | number | bigint | null | undefined): string {
+  if (amount === null || amount === undefined || !/^-?\d+$/.test(String(amount))) return "—";
+  return BigInt(amount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".") + "\u00a0₫";
 }
 
 export function formatDateTime(isoString: string | null | undefined): string {

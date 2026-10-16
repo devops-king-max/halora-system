@@ -2,5 +2,9 @@ packages:
   - 'packages/*'
   - 'apps/*'
 
+nodeLinker: hoisted
+
 allowBuilds:
+  '@scarf/scarf': false
+  argon2: true
   esbuild: true

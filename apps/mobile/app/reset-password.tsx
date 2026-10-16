@@ -1,7 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { View, ScrollView, StyleSheet, Alert } from "react-native";
 import { Text, TextInput, Button, Surface } from "react-native-paper";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -10,8 +10,8 @@ import { apiClient } from "../src/api";
 const resetSchema = z
   .object({
     token: z.string().min(1, "Vui lòng nhập mã xác thực đã nhận qua email"),
-    newPassword: z.string().min(6, "Mật khẩu mới tối thiểu 6 ký tự"),
-    confirmPassword: z.string().min(6, "Vui lòng xác nhận mật khẩu"),
+    newPassword: z.string().min(10, "Mật khẩu mới tối thiểu 10 ký tự").max(128),
+    confirmPassword: z.string().min(10, "Vui lòng xác nhận mật khẩu").max(128),
   })
   .refine((data) => data.newPassword === data.confirmPassword, {
     message: "Mật khẩu xác nhận không khớp",
@@ -22,12 +22,14 @@ type ResetFormData = z.infer<typeof resetSchema>;
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ token?: string }>();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   const {
     control,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<ResetFormData>({
     resolver: zodResolver(resetSchema),
@@ -37,6 +39,10 @@ export default function ResetPasswordScreen() {
       confirmPassword: "",
     },
   });
+
+  useEffect(() => {
+    if (typeof params.token === "string") setValue("token", params.token);
+  }, [params.token, setValue]);
 
   const onSubmit = async (data: ResetFormData) => {
     setIsSubmitting(true);
