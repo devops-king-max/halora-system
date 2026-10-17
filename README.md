@@ -17,8 +17,6 @@ Mỗi tài khoản, gồm quản trị viên, nhân viên và khách hàng, có 
 
 ## Chạy hằng ngày trên máy hiện tại (Windows)
 
-Hướng dẫn này dành cho project đã cài đặt tại `C:\Users\anhxu\OneDrive\Desktop\halora-system`. Cấu hình cục bộ hiện dùng cổng **8081** cho web/API. Người mới clone source cần làm phần [cài đặt lần đầu](#cài-đặt-lần-đầu-với-docker) trước; nếu đặt project ở thư mục khác, thay đường dẫn trong lệnh `cd`.
-
 ### Chạy web quản trị và backend
 
 Mở Docker Desktop, chờ Linux Engine sẵn sàng, rồi mở PowerShell:
@@ -42,14 +40,6 @@ Sau khi cập nhật giao diện, nhấn **Ctrl + F5** trên trình duyệt. Có
 
 Chạy Docker theo bước trên để có backend/database. Máy cần cài Android Studio, Android SDK, tạo máy ảo Android và cài Expo Go tương thích **SDK 52** trong máy ảo. Mở máy ảo từ Device Manager trước, rồi mở PowerShell tại thư mục project:
 
-Để giảm tải RAM/CPU trên máy 16 GB, có thể mở riêng máy ảo từ PowerShell, không cần mở project Halora trong Android Studio. Trên máy hiện tại, dùng:
-
-```powershell
-Start-Process "D:\Android\Sdk\emulator\emulator.exe" -ArgumentList "-avd Medium_Phone_API_37.0 -cores 2 -feature -Vulkan"
-```
-
-Chờ màn hình chính Android xuất hiện rồi chạy nhóm lệnh bên dưới. Chỉ mở một phiên máy ảo; thông báo “already running” cho biết phiên trước vẫn tồn tại. Android 17/API 37 tự nâng RAM máy ảo lên tối thiểu 4 GB trên system image hiện tại. Nếu IDE đang index toàn monorepo và máy thiếu RAM, đóng IDE sau khi mở máy ảo riêng. Trong lượt kiểm tra ngày 17/10, cold boot riêng với 2 lõi và Vulkan tắt hoàn tất sau khoảng 100 giây; `adb` online và `sys.boot_completed=1`. Không dùng `-no-snapshot-load` cho mọi lần chạy hằng ngày; chỉ thêm khi cần Cold Boot để xử lý lỗi.
-
 ```powershell
 cd "C:\Users\anhxu\OneDrive\Desktop\halora-system"
 $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
@@ -62,8 +52,6 @@ pnpm --filter @halora/mobile exec expo start --port 8082 --android
 Nếu SDK được cài ở nơi khác, thay `ANDROID_HOME` bằng đường dẫn đó. `adb reverse` chuyển yêu cầu tới cổng 8081 trong máy ảo về backend trên máy tính; chạy lại sau khi khởi động lại máy ảo. Expo dùng cổng **8082** vì cổng 8081 đang phục vụ Halora. Biến `EXPO_PUBLIC_API_BASE_URL` ở trên chỉ áp dụng cho cửa sổ PowerShell hiện tại; chạy lại cả nhóm lệnh mỗi lần mở cửa sổ mới.
 
 Giữ cửa sổ chạy Expo mở trong lúc dùng app. App dành cho khách hàng: đăng ký hoặc đăng nhập bằng tài khoản khách hàng; tài khoản quản trị dùng ở web. Hướng dẫn này dành cho máy ảo; cấu hình điện thoại thật và đóng gói được ghi ở phần [App Android](#app-android).
-
-Trên máy phát triển hiện tại, Android Studio, SDK và máy ảo được lưu tại `D:\Android\Android Studio`, `D:\Android\Sdk`, `D:\Android\avd` để giải phóng ổ C. Các thư mục cũ trên ổ C là junction trỏ sang ổ D nên shortcut và nhóm lệnh trên vẫn dùng được; có thể đặt trực tiếp `$env:ANDROID_HOME = "D:\Android\Sdk"`. Đây là cấu hình riêng của máy, không phải đường dẫn bắt buộc khi clone dự án.
 
 ### Dừng khi dùng xong
 
@@ -149,33 +137,12 @@ Database cần có đúng một admin đã bootstrap và admin đang hoạt đ�
 - 3 nhà cung cấp và quan hệ cung ứng; 3 phiếu nhập đã ghi nhận, 1 phiếu nhập đang soạn.
 - 1 phiếu điều chỉnh đã ghi nhận, tồn kho và lịch sử nhập/xuất/hoàn kho; có SKU tồn thấp.
 - 3 khách hàng, 6 địa chỉ và 3 giỏ hàng có hàng.
-- 4 chương trình khuyến mãi: `KM01` theo sản phẩm, `KM02` bản nháp theo sản phẩm, `KM03` theo hóa đơn và `KM04` theo voucher `VC01`.
+- 2 chương trình khuyến mãi, quy tắc giảm sản phẩm/đơn và voucher `DEMO10`.
 - 6 đơn hàng gồm chờ xác nhận, đã xác nhận, đang giao, hoàn tất và hai tình huống hủy; 4 khoản thanh toán, 1 hoàn tiền và 1 hóa đơn đã ghi nhận từ đơn hoàn tất.
 
-Nội dung hiển thị không gắn chữ `(mẫu)`, `[Mẫu]` hoặc hậu tố Demo, gồm tên, mô tả, địa chỉ, ghi chú và tên lưu trên giao dịch. Mã nghiệp vụ dùng dạng `SP01`, `SKU01`, `KM01`, `PN01`. Ảnh sản phẩm chưa được thêm; có thể upload ảnh thật qua giao diện. Khuyến mãi có hiệu lực từ 30 ngày trước tới 90 ngày sau thời điểm import đầu tiên. Dữ liệu được lưu thật trong Docker volume và hiển thị qua API; Docker khởi động thông thường không tự nạp seed. Migration `005_clean_display_labels.sql` làm sạch nội dung đã nạp, giữ nguyên username, email, mật khẩu, mã, số tiền và tồn kho.
+Tên/mã mẫu có dấu `(mẫu)` hoặc tiền tố `DEMO-`. Ảnh sản phẩm chưa được thêm; có thể upload ảnh thật qua giao diện. Khuyến mãi mẫu có hiệu lực từ 30 ngày trước tới 90 ngày sau thời điểm import đầu tiên. Dữ liệu được lưu thật trong Docker volume và hiển thị qua API; Docker khởi động thông thường không tự nạp seed.
 
 Nếu muốn chạy trực tiếp service import (không tự backup/đồng bộ file quản trị), dùng `docker compose run --rm --no-deps -T seed-demo`. Thông thường nên dùng lệnh pnpm ở trên. Khi clone source sang máy khác, chạy cài đặt/khởi tạo admin trước rồi mới nạp mẫu; dữ liệu trên máy cũ không đi theo Git.
-
-## Ảnh đại diện sản phẩm và thương hiệu
-
-Trong bảng **Sản phẩm** hoặc **Thương hiệu**, chọn **Tải ảnh** tại cột **Ảnh đại diện**, chọn file rồi nhấn **Lưu ảnh đại diện**. Form tạo/sửa cũng có ô tải ảnh. Hỗ trợ PNG, JPEG, WebP tối đa 8 MB; ảnh được lưu qua API thật và giữ trong Docker volume `uploads`. Chỉ tài khoản có quyền cập nhật tương ứng và tải media mới thao tác được.
-
-Ảnh được chọn cho sản phẩm hiển thị ở danh sách quản trị và app khách hàng; ảnh biến thể riêng được ưu tiên ở giỏ hàng/báo giá. Sản phẩm chưa chọn ảnh đại diện vẫn có thể dùng ảnh đầu trong thư viện ảnh hiện có. Thay ảnh không xóa file cũ hoặc thay snapshot trên đơn hàng đã ghi nhận. Migration `006_catalog_thumbnails.sql` bổ sung liên kết ảnh và các view; cập nhật Docker bằng `docker compose up --build -d --wait`.
-
-## Mã nghiệp vụ và phân quyền tài khoản
-
-Mã hiển thị gồm tiền tố và số thứ tự từ 01; mỗi loại có bộ đếm riêng, sau 99 tiếp tục 100. UUID trong API là khóa nội bộ để giữ liên kết. Giao diện sử dụng mã nghiệp vụ:
-
-| Đối tượng | Ví dụ mã |
-|---|---|
-| Tài khoản / nhân viên / khách hàng | `TK01` / `NV01` / `KH01` |
-| Loại sản phẩm / thương hiệu / sản phẩm / biến thể | `LSP01` / `TH01` / `SP01` / `SKU01` |
-| Nhà cung cấp / khuyến mãi / voucher | `NCC01` / `KM01` / `VC01` |
-| Đơn hàng / phiếu nhập / hóa đơn / điều chỉnh kho | `DH01` / `PN01` / `HD01` / `DC01` |
-
-Mã mới được cấp tự động. Form SKU và voucher cho phép để trống để hệ thống cấp mã; mã nhập thủ công phải đúng mẫu và không được đổi SKU/voucher đã cấp. Migration `003_business_codes.sql` chuyển mã cũ, đồng bộ mã đơn/SKU/voucher trong snapshot và giữ nguyên UUID, tiền, số lượng, số dư kho và mật khẩu. Chạy cập nhật bản Docker bằng `docker compose up --build -d --wait`; migration chạy trước khi API mới hoạt động.
-
-Mở **Phân quyền** hoặc **Tài khoản**, chọn **Gán vai trò** trên tài khoản nhân viên và lưu. Mỗi vai trò có bộ quyền cố định; một tài khoản có thể nhận nhiều vai trò nhân viên. Không có chức năng sửa bộ quyền của vai trò. Khách hàng luôn có vai trò Khách hàng. Chỉ admin gán vai trò, tài khoản bị đổi vai trò cần đăng nhập lại; hệ thống chặn việc loại bỏ admin hoạt động cuối cùng. Migration `004_fixed_role_permissions.sql` khôi phục ma trận quyền cố định và thu hồi phiên nhân viên cũ trong lần nâng cấp này; mật khẩu giữ nguyên.
 
 ## Lỗi Bad Gateway khi đăng nhập
 
@@ -313,32 +280,3 @@ pnpm dlx eas-cli build --platform android --profile preview
 ```
 
 Build/ký APK, cài thiết bị và nghiệm thu trọn luồng cần tài khoản EAS hoặc Android SDK/JDK phù hợp. Các bước này không được thay bằng tuyên bố typecheck đã nghiệm thu Android.
-
-## Khuyến mãi và voucher
-
-Trong **Khuyến mãi**, khi tạo chương trình phải chọn đúng một **Loại khuyến mãi**: **theo sản phẩm**, **theo hóa đơn** hoặc **theo voucher**. Trang chi tiết chỉ hiện phần điều kiện của loại đã chọn, cho thêm/sửa/xóa, tìm mã và phân trang. Chỉ đổi loại khi chương trình chưa có điều kiện, chưa từng dùng và chưa kết thúc. Danh sách chương trình lọc theo mã/tên, loại khuyến mãi, trạng thái, khoảng hiệu lực và sản phẩm. Mã điều kiện tự sinh KMSP01/KMHD01; voucher dùng VC01…
-
-Một đơn hàng vẫn có thể kết hợp **các chương trình khác nhau**: backend chọn một ưu đãi sản phẩm tốt nhất trên mỗi dòng, một ưu đãi hóa đơn tốt nhất trên tiền hàng còn lại, sau đó một voucher. Mỗi chương trình chỉ đóng góp theo loại của mình. Phí giao hàng không được giảm. Trần bỏ trống là không giới hạn; trần bằng 0 giảm 0 đồng. Phần trăm trong 0–100, ngưỡng/giới hạn không âm. Đơn cũ giữ nguyên tên và tiền giảm đã chốt khi cấu hình được sửa cho đơn mới.
-
-Voucher giữ lượt khi đặt đơn, chuyển sang đã dùng khi xác nhận, trả lượt khi hủy hợp lệ. Giới hạn tổng bỏ trống là không giới hạn; giới hạn 0 không cho dùng. Không hạ giới hạn thấp hơn lượt đang giữ/đã dùng. Ưu đãi từng áp dụng không được xóa; có thể tạm ngừng/kết thúc chương trình. Chương trình đã kết thúc không bật lại.
-
-Migration 008 tự nâng cấu trúc khi chạy Docker và tách chương trình cũ có nhiều loại thành các chương trình riêng. Giữ mã chương trình gốc cho loại đầu tiên (ưu tiên sản phẩm, hóa đơn, voucher); các loại còn lại nhận mã KM mới. Giữ UUID điều kiện/voucher, mã voucher, lượt dùng/giữ và toàn bộ snapshot, số tiền, lịch sử giao dịch. Khóa ngoại trong PostgreSQL chặn gắn điều kiện sai loại, kể cả khi ghi SQL trực tiếp. Không reset hoặc nạp lại dữ liệu kiểm thử để cập nhật tính năng.
-
-## APK Android cục bộ trên máy này
-
-Các lệnh dưới đây chạy tại thư mục gốc dự án, dùng Android SDK ở `D:\Android\Sdk`, JDK 17 ở `D:\Android\Jdk17` và Gradle cache ở `D:\Android\GradleCache`. Máy ảo là `Medium_Phone_API_37.0`. Docker Desktop phải hoạt động.
-
-```powershell
-# Build APK khi mã app thay đổi (lần đầu tải thư viện Gradle có thể lâu)
-pnpm android:build:local
-
-# Cài/cập nhật APK, khởi động Docker và mở app trên máy ảo
-pnpm android:install:local
-
-# Những lần sau: khởi động Docker, máy ảo và app đã cài
-pnpm android:run:local
-```
-
-APK được lưu ở `.local/android/halora-local-x86_64.apk`, có JS đi kèm nên không cần Metro hay Expo Go. Đây là bản kiểm thử cho máy ảo x86_64, ký bằng khóa debug do Expo tạo; không dùng để phát hành Play Store hay cài điện thoại ARM. Script nối cổng `8081` qua `adb reverse` mỗi lần chạy để app dùng backend Docker. Khi máy ảo khởi động lại, cần chạy lại script để nối cổng.
-
-Đăng nhập app bằng tài khoản **khách hàng**, ví dụ `khachhang01` / `123456` nếu đã nạp bộ dữ liệu kiểm thử. Tài khoản admin dùng trên web `http://localhost:8081`. Thay đường dẫn công cụ bằng các tham số `-SdkRoot`, `-JavaHome`, `-GradleCache` khi gọi trực tiếp script PowerShell trong `infra/scripts/` trên máy khác. Công cụ build cần Android platform 35, build-tools 34.0.0/35.0.0, NDK 26.1.10909125 và CMake 3.22.1. Tạm đóng Android Studio khi build/mở máy ảo để giảm áp lực RAM.
