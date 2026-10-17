@@ -24,7 +24,7 @@ export class AuthService {
     assert(a.status === 'ACTIVE' && (a.realm === 'CUSTOMER' ? a.customerStatus === 'ACTIVE' : a.employeeStatus === 'ACTIVE'), 'UNAUTHENTICATED', 'Tài khoản không hoạt động.', 401);
     const roles = a.realm === 'STAFF' ? await this.db.query('SELECT r.code FROM roles r JOIN employee_roles er ON er.role_id=r.id WHERE er.employee_id=$1 ORDER BY r.code',[a.employeeId]) : [{code:'CUSTOMER'}];
     const permissions = a.realm === 'STAFF' ? await this.db.query('SELECT DISTINCT p.code FROM permissions p JOIN role_permissions rp ON rp.permission_id=p.id JOIN employee_roles er ON er.role_id=rp.role_id WHERE er.employee_id=$1 ORDER BY p.code',[a.employeeId]) : [];
-    return { accountId:String(a.id),realm:a.realm as Actor['realm'],username:String(a.username),email:String(a.email),displayName:String(a.customerName || a.employeeName),customerId:a.customerId ? String(a.customerId):null,employeeId:a.employeeId ? String(a.employeeId):null,roles:roles.map(r=>String(r.code)),permissions:permissions.map(p=>String(p.code)),authVersion:Number(a.authVersion),sessionId:'' };
+    return { accountId:String(a.id),accountCode:String(a.code),realm:a.realm as Actor['realm'],username:String(a.username),email:String(a.email),displayName:String(a.customerName || a.employeeName),customerId:a.customerId ? String(a.customerId):null,employeeId:a.employeeId ? String(a.employeeId):null,roles:roles.map(r=>String(r.code)),permissions:permissions.map(p=>String(p.code)),authVersion:Number(a.authVersion),sessionId:'' };
   }
   publicPrincipal(actor: Actor): Row {
     const {sessionId: _s,authVersion: _v,...publicFields} = actor;

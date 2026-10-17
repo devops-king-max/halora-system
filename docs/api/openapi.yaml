@@ -1032,6 +1032,39 @@ paths:
               schema:
                 $ref: '#/components/schemas/BrandResponse'
 
+  /admin/brands/{id}/thumbnail:
+    put:
+      tags: [Admin Brands]
+      summary: Set the brands representative image
+      description: Requires brands.update. Upload a PNG/JPEG/WebP image using POST /admin/media, then pass its ID. The version belongs to the target record.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThumbnailInput'
+      responses:
+        '200':
+          description: Record with the selected representative image
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BrandResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+
   /admin/brands/{id}:
     get:
       tags: [Admin Brands]
@@ -1161,6 +1194,39 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProductResponse'
+
+  /admin/products/{id}/thumbnail:
+    put:
+      tags: [Admin Products]
+      summary: Set the products representative image
+      description: Requires products.update. Upload a PNG/JPEG/WebP image using POST /admin/media, then pass its ID. The version belongs to the target record.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThumbnailInput'
+      responses:
+        '200':
+          description: Record with the selected representative image
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
 
   /admin/products/{id}:
     get:
@@ -1862,24 +1928,11 @@ paths:
         '409':
           $ref: '#/components/responses/ErrorResponse'
 
-  /admin/roles:
-    get:
-      tags: [Admin Roles & Permissions]
-      summary: Admin list all roles
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Operation result
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RoleListResponse'
-
-  /admin/roles/{id}/permissions:
-    patch:
-      tags: [Admin Roles & Permissions]
-      summary: Admin assign permissions to role
+  /admin/accounts/{id}/roles:
+    put:
+      tags: [Admin Accounts]
+      summary: Assign fixed roles to a staff account
+      description: Only ADMIN may assign roles. CUSTOMER roles are fixed. Changes revoke the target account sessions; at least one active admin must remain.
       security:
         - bearerAuth: []
       parameters:
@@ -1893,16 +1946,32 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RolePermissionAssignInput'
+              $ref: '#/components/schemas/AccountRoleAssignInput'
+      responses:
+        '200':
+          description: Account with the assigned roles
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /admin/roles:
+    get:
+      tags: [Admin Roles & Permissions]
+      summary: List system roles with fixed permissions (read only)
+      security:
+        - bearerAuth: []
       responses:
         '200':
           description: Operation result
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RoleResponse'
-        '409':
-          $ref: '#/components/responses/ErrorResponse'
+                $ref: '#/components/schemas/RoleListResponse'
 
   /admin/permissions:
     get:
@@ -2539,6 +2608,24 @@ paths:
         - $ref: '#/components/parameters/PageQuery'
         - $ref: '#/components/parameters/LimitQuery'
         - $ref: '#/components/parameters/SearchQuery'
+        - name: type
+          in: query
+          schema:
+            $ref: '#/components/schemas/PromotionType'
+        - name: from
+          in: query
+          description: Inclusive start of the requested promotion validity interval.
+          schema:
+            $ref: '#/components/schemas/ISODateTime'
+        - name: to
+          in: query
+          description: Inclusive end of the requested promotion validity interval.
+          schema:
+            $ref: '#/components/schemas/ISODateTime'
+        - name: productId
+          in: query
+          schema:
+            $ref: '#/components/schemas/UUID'
         - name: status
           in: query
           schema:
@@ -2655,6 +2742,7 @@ paths:
             $ref: '#/components/schemas/UUID'
         - $ref: '#/components/parameters/PageQuery'
         - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/SearchQuery'
       responses:
         '200':
           description: Operation result
@@ -2759,6 +2847,7 @@ paths:
             $ref: '#/components/schemas/UUID'
         - $ref: '#/components/parameters/PageQuery'
         - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/SearchQuery'
       responses:
         '200':
           description: Operation result
@@ -2863,6 +2952,7 @@ paths:
             $ref: '#/components/schemas/UUID'
         - $ref: '#/components/parameters/PageQuery'
         - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/SearchQuery'
       responses:
         '200':
           description: Operation result
@@ -3759,6 +3849,10 @@ components:
     DocumentStatus:
       type: string
       enum: [DRAFT, POSTED, CANCELLED]
+    PromotionType:
+      type: string
+      enum: [PRODUCT, ORDER, VOUCHER]
+
     PromotionStatus:
       type: string
       enum: [DRAFT, ACTIVE, PAUSED, ENDED]
@@ -3852,11 +3946,15 @@ components:
 
     # Auth
     Principal:
+      description: Account roles determine the fixed permission set; accountId is an internal UUID and accountCode is the visible code.
       type: object
-      required: [accountId, realm, username, email, displayName, customerId, employeeId, roles, permissions]
+      required: [accountId, accountCode, realm, username, email, displayName, customerId, employeeId, roles, permissions]
       properties:
         accountId:
           $ref: '#/components/schemas/UUID'
+        accountCode:
+          type: string
+          pattern: '^TK[0-9]{2,}$'
         realm:
           $ref: '#/components/schemas/AccountRealm'
         username:
@@ -4026,8 +4124,15 @@ components:
       allOf:
         - $ref: '#/components/schemas/EntityMetadata'
         - type: object
-          required: [code, name, description, status]
+          required: [code, name, description, status, thumbnailMediaId, thumbnailUrl]
           properties:
+            thumbnailMediaId:
+              type: string
+              format: uuid
+              nullable: true
+            thumbnailUrl:
+              type: string
+              nullable: true
             code:
               type: string
             name:
@@ -4042,6 +4147,11 @@ components:
       type: object
       required: [name, description, status]
       properties:
+        thumbnailMediaId:
+          type: string
+          format: uuid
+          nullable: true
+          description: ID of an uploaded image; omit to preserve the current selection, null to clear it.
         name:
           type: string
         description:
@@ -4073,8 +4183,15 @@ components:
       allOf:
         - $ref: '#/components/schemas/EntityMetadata'
         - type: object
-          required: [code, name, slug, categoryId, brandId, description, ingredients, benefits, isFeatured, status]
+          required: [code, name, slug, categoryId, brandId, description, ingredients, benefits, isFeatured, status, thumbnailMediaId, thumbnailUrl]
           properties:
+            thumbnailMediaId:
+              type: string
+              format: uuid
+              nullable: true
+            thumbnailUrl:
+              type: string
+              nullable: true
             code:
               type: string
             name:
@@ -4103,6 +4220,11 @@ components:
       type: object
       required: [name, slug, categoryId, brandId, description, ingredients, benefits, isFeatured, status]
       properties:
+        thumbnailMediaId:
+          type: string
+          format: uuid
+          nullable: true
+          description: ID of an uploaded image; omit to preserve the current selection, null to clear it.
         name:
           type: string
         slug:
@@ -4179,11 +4301,13 @@ components:
               $ref: '#/components/schemas/ActiveStatus'
 
     VariantInput:
+      description: SKU is generated when omitted. A supplied SKU must match SKU01 format; existing SKUs cannot be changed.
       type: object
-      required: [sku, name, color, volumeMl, weightGrams, salePrice, referenceCostPrice, lowStockThreshold, status]
+      required: [name, color, volumeMl, weightGrams, salePrice, referenceCostPrice, lowStockThreshold, status]
       properties:
         sku:
           type: string
+          pattern: '^SKU[0-9]{2,}$'
         name:
           type: string
         color:
@@ -4223,6 +4347,17 @@ components:
             $ref: '#/components/schemas/ProductVariant'
         meta:
           $ref: '#/components/schemas/PaginationMeta'
+
+    ThumbnailInput:
+      type: object
+      required: [mediaId, version]
+      properties:
+        mediaId:
+          type: string
+          format: uuid
+          nullable: true
+        version:
+          type: integer
 
     # Media & Images
     ProductImage:
@@ -4596,8 +4731,15 @@ components:
       allOf:
         - $ref: '#/components/schemas/EntityMetadata'
         - type: object
-          required: [realm, username, email, status, customerId, employeeId]
+          required: [code, roleIds, realm, username, email, status, customerId, employeeId]
           properties:
+            code:
+              type: string
+              pattern: '^TK[0-9]{2,}$'
+            roleIds:
+              type: array
+              items:
+                $ref: '#/components/schemas/UUID'
             realm:
               $ref: '#/components/schemas/AccountRealm'
             username:
@@ -4614,6 +4756,18 @@ components:
               type: string
               format: uuid
               nullable: true
+
+    AccountRoleAssignInput:
+      type: object
+      required: [roleIds, version]
+      properties:
+        roleIds:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/UUID'
+        version:
+          type: integer
 
     AccountStatusUpdateInput:
       type: object
@@ -4658,17 +4812,6 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/UUID'
-
-    RolePermissionAssignInput:
-      type: object
-      required: [permissionIds, version]
-      properties:
-        permissionIds:
-          type: array
-          items:
-            $ref: '#/components/schemas/UUID'
-        version:
-          type: integer
 
     RoleResponse:
       type: object
@@ -5637,8 +5780,12 @@ components:
       allOf:
         - $ref: '#/components/schemas/EntityMetadata'
         - type: object
-          required: [code, name, description, startsAt, endsAt, status, hasUsage]
+          required: [code, name, description, startsAt, endsAt, status, hasUsage, type, hasConditions]
           properties:
+            type:
+              $ref: '#/components/schemas/PromotionType'
+            hasConditions:
+              type: boolean
             code:
               type: string
             name:
@@ -5657,8 +5804,10 @@ components:
 
     PromotionInput:
       type: object
-      required: [name, description, startsAt, endsAt, status]
+      required: [name, description, startsAt, endsAt, status, type]
       properties:
+        type:
+          $ref: '#/components/schemas/PromotionType'
         name:
           type: string
         description:
@@ -5693,8 +5842,12 @@ components:
       allOf:
         - $ref: '#/components/schemas/EntityMetadata'
         - type: object
-          required: [promotionId, productId, variantId, discountPercent, minQuantity, maxDiscountAmount]
+          required: [code, hasUsage, promotionId, productId, variantId, discountPercent, minQuantity, maxDiscountAmount]
           properties:
+            code:
+              type: string
+            hasUsage:
+              type: boolean
             promotionId:
               $ref: '#/components/schemas/UUID'
             productId:
@@ -5714,7 +5867,12 @@ components:
 
     ProductPromotionRuleInput:
       type: object
-      required: [productId, variantId, discountPercent, minQuantity, maxDiscountAmount]
+      required:
+        - productId
+        - variantId
+        - discountPercent
+        - minQuantity
+        - maxDiscountAmount
       properties:
         productId:
           $ref: '#/components/schemas/UUID'
@@ -5726,9 +5884,11 @@ components:
           $ref: '#/components/schemas/Percentage'
         minQuantity:
           type: integer
+          minimum: 0
+          maximum: 1000000
         maxDiscountAmount:
           type: string
-          pattern: '^[0-9]+$'
+          pattern: ^[0-9]{1,18}$
           nullable: true
 
     ProductPromotionRuleResponse:
@@ -5753,8 +5913,12 @@ components:
       allOf:
         - $ref: '#/components/schemas/EntityMetadata'
         - type: object
-          required: [promotionId, minOrderAmount, discountPercent, maxDiscountAmount]
+          required: [code, hasUsage, promotionId, minOrderAmount, discountPercent, maxDiscountAmount]
           properties:
+            code:
+              type: string
+            hasUsage:
+              type: boolean
             promotionId:
               $ref: '#/components/schemas/UUID'
             minOrderAmount:
@@ -5768,7 +5932,10 @@ components:
 
     OrderPromotionRuleInput:
       type: object
-      required: [minOrderAmount, discountPercent, maxDiscountAmount]
+      required:
+        - minOrderAmount
+        - discountPercent
+        - maxDiscountAmount
       properties:
         minOrderAmount:
           $ref: '#/components/schemas/Money'
@@ -5776,7 +5943,7 @@ components:
           $ref: '#/components/schemas/Percentage'
         maxDiscountAmount:
           type: string
-          pattern: '^[0-9]+$'
+          pattern: ^[0-9]{1,18}$
           nullable: true
 
     OrderPromotionRuleResponse:
@@ -5801,8 +5968,10 @@ components:
       allOf:
         - $ref: '#/components/schemas/EntityMetadata'
         - type: object
-          required: [promotionId, code, discountPercent, minOrderAmount, maxDiscountAmount, maxUses, usedCount, reservedCount, perCustomerLimit, status]
+          required: [hasUsage, promotionId, code, discountPercent, minOrderAmount, maxDiscountAmount, maxUses, usedCount, reservedCount, perCustomerLimit, status]
           properties:
+            hasUsage:
+              type: boolean
             promotionId:
               $ref: '#/components/schemas/UUID'
             code:
@@ -5828,24 +5997,36 @@ components:
               $ref: '#/components/schemas/ActiveStatus'
 
     VoucherInput:
+      description: Code is generated when omitted. Existing codes cannot be changed. Null maxUses is unlimited; zero limits allow no use.
       type: object
-      required: [code, discountPercent, minOrderAmount, maxDiscountAmount, maxUses, perCustomerLimit, status]
+      required:
+        - discountPercent
+        - minOrderAmount
+        - maxDiscountAmount
+        - maxUses
+        - perCustomerLimit
+        - status
       properties:
         code:
           type: string
+          pattern: ^VC[0-9]{2,}$
         discountPercent:
           $ref: '#/components/schemas/Percentage'
         minOrderAmount:
           $ref: '#/components/schemas/Money'
         maxDiscountAmount:
           type: string
-          pattern: '^[0-9]+$'
+          pattern: ^[0-9]{1,18}$
           nullable: true
         maxUses:
           type: integer
           nullable: true
+          minimum: 0
+          maximum: 2147483647
         perCustomerLimit:
           type: integer
+          minimum: 0
+          maximum: 2147483647
         status:
           $ref: '#/components/schemas/ActiveStatus'
 

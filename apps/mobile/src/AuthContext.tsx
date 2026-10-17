@@ -8,7 +8,7 @@ import {
 } from "./api";
 
 interface CustomerLoginInput {
-  email: string;
+  identifier: string;
   password: string;
 }
 
@@ -68,7 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = async (data: CustomerLoginInput) => {
-    await apiClient.auth.customerLogin(data.email, data.password);
+    await apiClient.auth.customerLogin(data.identifier, data.password);
     const profile = await apiClient.customerPortal.getProfile();
     setUser(profile);
     queryClient.clear();

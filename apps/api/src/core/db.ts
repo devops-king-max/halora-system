@@ -67,7 +67,7 @@ export class Database implements OnModuleDestroy {
   async onModuleDestroy(): Promise<void> { await this.pool.end(); }
 }
 export interface Actor {
-  accountId: string; realm: 'STAFF'|'CUSTOMER'; username: string; email: string; displayName: string;
+  accountId: string; accountCode: string; realm: 'STAFF'|'CUSTOMER'; username: string; email: string; displayName: string;
   customerId: string|null; employeeId: string|null; roles: string[]; permissions: string[];
   sessionId: string; authVersion: number;
 }

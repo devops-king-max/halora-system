@@ -11,6 +11,9 @@ import {
   Popconfirm,
   message,
   Tooltip,
+  Modal,
+  Alert,
+  Checkbox,
 } from "antd";
 import {
   SearchOutlined,
@@ -18,6 +21,7 @@ import {
   UnlockOutlined,
   StopOutlined,
   ReloadOutlined,
+  SafetyCertificateOutlined,
 } from "@ant-design/icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "../../api";
@@ -30,7 +34,7 @@ import type { Account, AccountStatus } from "@halora/api-client";
 
 const { Title, Text } = Typography;
 
-export const AccountsPage: React.FC = () => {
+export const AccountsPage: React.FC<{ permissionMode?: boolean }> = ({ permissionMode = false }) => {
   const queryClient = useQueryClient();
 
   const [page, setPage] = useState(1);
@@ -38,6 +42,19 @@ export const AccountsPage: React.FC = () => {
   const [search, setSearch] = useState("");
   const [realmFilter, setRealmFilter] = useState<string | undefined>(undefined);
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
+  const rolesQuery = useQuery({ queryKey: ['admin', 'roles'], queryFn: () => apiClient.roles.listAdmin() });
+  const assignRolesMutation = useMutation({
+    mutationFn: () => apiClient.accounts.assignRoles(editingAccount!.id, { roleIds: selectedRoles, version: editingAccount!.version }),
+    onSuccess: () => {
+      message.success('Đã gán vai trò. Tài khoản được cập nhật cần đăng nhập lại.');
+      setEditingAccount(null);
+      queryClient.invalidateQueries({ queryKey: ['admin', 'accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'employees'] });
+    },
+    onError: (error: unknown) => message.error(error instanceof ApiClientError ? error.message : 'Không thể gán vai trò. Vui lòng thử lại.'),
+  });
 
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ["admin", "accounts", page, limit, search, realmFilter, statusFilter],
@@ -79,10 +96,10 @@ export const AccountsPage: React.FC = () => {
   const columns = [
     {
       title: "Mã tài khoản",
-      dataIndex: "id",
-      key: "id",
+      dataIndex: "code",
+      key: "code",
       width: 130,
-      render: (id: string) => <code>{id.substring(0, 8)}...</code>,
+      render: (code: string) => <code>{code}</code>,
     },
     {
       title: "Phân vùng (Realm)",
@@ -104,6 +121,11 @@ export const AccountsPage: React.FC = () => {
       key: "email",
     },
     {
+      title: 'Vai trò',
+      key: 'roles',
+      render: (_: unknown, record: Account) => <Space wrap>{record.roleIds.map(id => <Tag key={id} color="magenta">{rolesQuery.data?.find(role => role.id === id)?.name || 'Đang tải vai trò'}</Tag>)}{record.roleIds.length === 0 && <Text type="secondary">Chưa gán vai trò</Text>}</Space>,
+    },
+    {
       title: "Trạng thái",
       dataIndex: "status",
       key: "status",
@@ -123,6 +145,9 @@ export const AccountsPage: React.FC = () => {
       width: 130,
       render: (_: unknown, record: Account) => (
         <Space size="small">
+          {record.realm === 'STAFF' ? <PermissionGuard permission="employees.assignRoles">
+            <Button size="small" icon={<SafetyCertificateOutlined />} disabled={!rolesQuery.data} onClick={() => { setEditingAccount(record); setSelectedRoles(record.roleIds); }}>Gán vai trò</Button>
+          </PermissionGuard> : <Text type="secondary">Vai trò cố định</Text>}
           <PermissionGuard permission="accounts.update">
             {record.status === "LOCKED" ? (
               <Popconfirm
@@ -167,10 +192,12 @@ export const AccountsPage: React.FC = () => {
     <div>
       <div style={{ marginBottom: 20 }}>
         <Title level={4} style={{ margin: 0 }}>
-          Quản lý tài khoản hệ thống
+          {permissionMode ? 'Phân quyền tài khoản' : 'Quản lý tài khoản hệ thống'}
         </Title>
-        <Text type="secondary">Giám sát, khóa/mở khóa tài khoản nhân viên và khách hàng</Text>
+        <Text type="secondary">Gán vai trò cho từng tài khoản; quyền của mỗi vai trò được hệ thống quy định cố định. Khách hàng luôn có vai trò Khách hàng.</Text>
       </div>
+
+      {rolesQuery.isError && <Alert type="error" showIcon message="Không tải được vai trò" action={<Button onClick={() => rolesQuery.refetch()}>Thử lại</Button>} style={{ marginBottom: 16 }} />}
 
       <Card size="small" style={{ marginBottom: 16 }}>
         <Space wrap>
@@ -222,8 +249,9 @@ export const AccountsPage: React.FC = () => {
         {data && (
           <Table
             dataSource={data.data}
-            columns={columns}
+            columns={permissionMode ? columns.filter(column => column.key !== 'createdAt') : columns}
             rowKey="id"
+            scroll={{ x: 1200 }}
             pagination={{
               current: data.meta.page,
               pageSize: data.meta.limit,
@@ -237,6 +265,10 @@ export const AccountsPage: React.FC = () => {
           />
         )}
       </ApiStateWrapper>
+      <Modal title={`Gán vai trò: ${editingAccount?.username || ''}`} open={!!editingAccount} onCancel={() => setEditingAccount(null)} onOk={() => assignRolesMutation.mutate()} confirmLoading={assignRolesMutation.isPending} okText="Lưu vai trò" cancelText="Hủy">
+        <Typography.Paragraph>Mỗi vai trò có bộ quyền cố định. Sau khi đổi vai trò, các phiên đăng nhập của tài khoản này sẽ hết hiệu lực.</Typography.Paragraph>
+        <Checkbox.Group aria-label="Vai trò tài khoản" value={selectedRoles} onChange={values => setSelectedRoles(values.map(String))} style={{ display: 'flex', flexDirection: 'column', gap: 12 }} options={rolesQuery.data?.filter(role => role.code !== 'CUSTOMER').map(role => ({ value: role.id, label: role.name }))} />
+      </Modal>
     </div>
   );
 };

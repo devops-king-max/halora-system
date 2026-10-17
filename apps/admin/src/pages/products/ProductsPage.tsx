@@ -1,6 +1,8 @@
+import { ThumbnailModal, ThumbnailUpload } from "../../components/common/ThumbnailUpload";
 import React, { useState } from "react";
 import {
   Typography,
+  Image,
   Table,
   Button,
   Input,
@@ -17,6 +19,7 @@ import {
 } from "antd";
 import {
   PlusOutlined,
+  PictureOutlined,
   SearchOutlined,
   EditOutlined,
   DeleteOutlined,
@@ -51,6 +54,8 @@ export const ProductsPage: React.FC = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [form] = Form.useForm();
+  const [imageUploading, setImageUploading] = useState(false);
+  const [thumbnailTarget, setThumbnailTarget] = useState<Product | null>(null);
 
   // Fetch active categories for dropdown
   const { data: categoriesData } = useQuery({
@@ -150,6 +155,7 @@ export const ProductsPage: React.FC = () => {
   const openEditModal = (prod: Product) => {
     setEditingProduct(prod);
     form.setFieldsValue({
+      thumbnailMediaId: prod.thumbnailMediaId,
       name: prod.name,
       slug: prod.slug,
       categoryId: prod.categoryId,
@@ -188,6 +194,15 @@ export const ProductsPage: React.FC = () => {
 
   const columns = [
     {
+      title: 'Ảnh đại diện',
+      key: 'thumbnail',
+      width: 112,
+      render: (_: unknown, record: Product) => <Space direction="vertical" size={4}>
+        {record.thumbnailUrl ? <Image src={record.thumbnailUrl} alt={record.name} width={56} height={56} style={{ objectFit: 'cover', borderRadius: 6 }} /> : <Text type="secondary">Chưa có ảnh</Text>}
+        <PermissionGuard permission="products.update"><Button size="small" type="text" icon={<PictureOutlined />} aria-label={`Tải ảnh đại diện ${record.code}`} onClick={() => setThumbnailTarget(record)}>Tải ảnh</Button></PermissionGuard>
+      </Space>,
+    },
+    {
       title: "Mã SP",
       dataIndex: "code",
       key: "code",
@@ -198,6 +213,7 @@ export const ProductsPage: React.FC = () => {
       title: "Tên sản phẩm",
       dataIndex: "name",
       key: "name",
+      width: 240,
       render: (name: string, record: Product) => (
         <div>
           <a
@@ -362,6 +378,7 @@ export const ProductsPage: React.FC = () => {
             dataSource={data.data}
             columns={columns}
             rowKey="id"
+            scroll={{ x: 1300 }}
             pagination={{
               current: data.meta.page,
               pageSize: data.meta.limit,
@@ -385,12 +402,13 @@ export const ProductsPage: React.FC = () => {
         }}
         onOk={() => form.submit()}
         confirmLoading={createMutation.isPending || updateMutation.isPending}
+        okButtonProps={{ disabled: imageUploading, style: { backgroundColor: "#c05c74", borderColor: "#c05c74" } }}
         okText={editingProduct ? "Lưu thay đổi" : "Tạo sản phẩm"}
         cancelText="Hủy"
         width={680}
-        okButtonProps={{ style: { backgroundColor: "#c05c74", borderColor: "#c05c74" } }}
       >
         <Form form={form} layout="vertical" onFinish={handleFormSubmit} requiredMark="optional">
+          <Form.Item name="thumbnailMediaId" label="Ảnh đại diện"><ThumbnailUpload key={editingProduct?.id || 'new'} initialUrl={editingProduct?.thumbnailUrl} onUploadingChange={setImageUploading} /></Form.Item>
           <Form.Item
             name="name"
             label="Tên sản phẩm"
@@ -480,6 +498,7 @@ export const ProductsPage: React.FC = () => {
           </Space>
         </Form>
       </Modal>
+      {thumbnailTarget && <ThumbnailModal key={thumbnailTarget.id} record={thumbnailTarget} resource="products" onClose={() => setThumbnailTarget(null)} />}
     </div>
   );
 };

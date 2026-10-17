@@ -90,8 +90,8 @@ export const ProfilePage: React.FC = () => {
         <Col xs={24} lg={14}>
           <Card title={<><UserOutlined /> Thông tin cá nhân</>} bordered={false} loading={profileLoading}>
             <Descriptions column={1} bordered size="middle">
-              <Descriptions.Item label="Mã tài khoản (ID)">
-                <code>{principal?.accountId}</code>
+              <Descriptions.Item label="Mã tài khoản">
+                <code>{principal?.accountCode}</code>
               </Descriptions.Item>
               <Descriptions.Item label="Tên đăng nhập">
                 {principal?.username}

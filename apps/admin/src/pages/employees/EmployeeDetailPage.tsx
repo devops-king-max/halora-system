@@ -185,7 +185,6 @@ export const EmployeeDetailPage: React.FC = () => {
                 {employee.accountId ? (
                   <Space>
                     <Tag color="green">Đã liên kết tài khoản</Tag>
-                    <code>{employee.accountId}</code>
                   </Space>
                 ) : (
                   <Tag color="orange">Chưa có tài khoản</Tag>
@@ -282,7 +281,7 @@ export const EmployeeDetailPage: React.FC = () => {
         >
           <Form.Item name="roleIds" label="Chọn vai trò">
             <Checkbox.Group style={{ width: "100%", display: "flex", flexDirection: "column", gap: 10 }}>
-              {rolesList?.map((r) => (
+              {rolesList?.filter(r => r.code !== 'CUSTOMER').map((r) => (
                 <Checkbox key={r.id} value={r.id}>
                   <Text strong>{r.name}</Text> (<code>{r.code}</code>) - {r.description}
                 </Checkbox>

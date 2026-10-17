@@ -20,13 +20,16 @@ Tái tạo tài liệu: `pnpm --filter @halora/api exec tsx scripts/document-sch
 | `created_at` | `timestamp with time zone` | Có | now() |
 | `updated_at` | `timestamp with time zone` | Có | now() |
 | `version` | `integer` | Có | 1 |
+| `code` | `text` | Có | halora_code('TK'::text) |
 
 Ràng buộc:
 
+- `accounts_business_code_format`: `CHECK ((code ~ '^TK[0-9]{2,}$'::text))`
 - `accounts_realm_check`: `CHECK ((realm = ANY (ARRAY['STAFF'::text, 'CUSTOMER'::text])))`
 - `accounts_status_check`: `CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'LOCKED'::text, 'INACTIVE'::text])))`
 - `accounts_username_check`: `CHECK ((length(TRIM(BOTH FROM username)) > 0))`
 - `accounts_auth_version_not_null`: `NOT NULL auth_version`
+- `accounts_code_not_null`: `NOT NULL code`
 - `accounts_created_at_not_null`: `NOT NULL created_at`
 - `accounts_email_not_null`: `NOT NULL email`
 - `accounts_id_not_null`: `NOT NULL id`
@@ -37,10 +40,12 @@ Ràng buộc:
 - `accounts_username_not_null`: `NOT NULL username`
 - `accounts_version_not_null`: `NOT NULL version`
 - `accounts_pkey`: `PRIMARY KEY (id)`
+- `accounts_code_key`: `UNIQUE (code)`
 - `accounts_id_realm_key`: `UNIQUE (id, realm)`
 
 Chỉ mục:
 
+- `CREATE UNIQUE INDEX accounts_code_key ON public.accounts USING btree (code)`
 - `CREATE UNIQUE INDEX accounts_email_realm_uq ON public.accounts USING btree (realm, lower(email))`
 - `CREATE UNIQUE INDEX accounts_id_realm_key ON public.accounts USING btree (id, realm)`
 - `CREATE UNIQUE INDEX accounts_pkey ON public.accounts USING btree (id)`
@@ -117,10 +122,13 @@ Chỉ mục:
 | `created_at` | `timestamp with time zone` | Có | now() |
 | `updated_at` | `timestamp with time zone` | Có | now() |
 | `version` | `integer` | Có | 1 |
+| `thumbnail_media_id` | `uuid` | Không | — |
 
 Ràng buộc:
 
+- `brands_business_code_format`: `CHECK ((code ~ '^TH[0-9]{2,}$'::text))`
 - `brands_status_check`: `CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'INACTIVE'::text])))`
+- `brands_thumbnail_media_id_fkey`: `FOREIGN KEY (thumbnail_media_id) REFERENCES media_assets(id) ON DELETE RESTRICT`
 - `brands_code_not_null`: `NOT NULL code`
 - `brands_created_at_not_null`: `NOT NULL created_at`
 - `brands_id_not_null`: `NOT NULL id`
@@ -136,6 +144,26 @@ Chỉ mục:
 - `CREATE UNIQUE INDEX brands_code_key ON public.brands USING btree (code)`
 - `CREATE UNIQUE INDEX brands_name_uq ON public.brands USING btree (lower(TRIM(BOTH FROM name)))`
 - `CREATE UNIQUE INDEX brands_pkey ON public.brands USING btree (id)`
+- `CREATE INDEX brands_thumbnail_media_idx ON public.brands USING btree (thumbnail_media_id) WHERE (thumbnail_media_id IS NOT NULL)`
+
+### business_code_counters
+
+| Cột | Kiểu PostgreSQL | Bắt buộc | Mặc định |
+|---|---|---|---|
+| `prefix` | `text` | Có | — |
+| `last_value` | `bigint` | Có | — |
+
+Ràng buộc:
+
+- `business_code_counters_last_value_check`: `CHECK ((last_value >= 0))`
+- `business_code_counters_prefix_check`: `CHECK ((prefix ~ '^[A-Z]{2,6}$'::text))`
+- `business_code_counters_last_value_not_null`: `NOT NULL last_value`
+- `business_code_counters_prefix_not_null`: `NOT NULL prefix`
+- `business_code_counters_pkey`: `PRIMARY KEY (prefix)`
+
+Chỉ mục:
+
+- `CREATE UNIQUE INDEX business_code_counters_pkey ON public.business_code_counters USING btree (prefix)`
 
 ### cart_items
 
@@ -208,6 +236,7 @@ Loại sản phẩm
 
 Ràng buộc:
 
+- `categories_business_code_format`: `CHECK ((code ~ '^LSP[0-9]{2,}$'::text))`
 - `categories_status_check`: `CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'INACTIVE'::text])))`
 - `categories_code_not_null`: `NOT NULL code`
 - `categories_created_at_not_null`: `NOT NULL created_at`
@@ -281,6 +310,7 @@ Chỉ mục:
 Ràng buộc:
 
 - `customers_account_realm_check`: `CHECK ((account_realm = 'CUSTOMER'::text))`
+- `customers_business_code_format`: `CHECK ((code ~ '^KH[0-9]{2,}$'::text))`
 - `customers_status_check`: `CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'INACTIVE'::text])))`
 - `customers_account_id_account_realm_fkey`: `FOREIGN KEY (account_id, account_realm) REFERENCES accounts(id, realm) ON DELETE RESTRICT`
 - `customers_account_id_not_null`: `NOT NULL account_id`
@@ -342,6 +372,7 @@ Chỉ mục:
 Ràng buộc:
 
 - `employees_account_realm_check`: `CHECK ((account_realm = 'STAFF'::text))`
+- `employees_business_code_format`: `CHECK ((code ~ '^NV[0-9]{2,}$'::text))`
 - `employees_status_check`: `CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'INACTIVE'::text])))`
 - `employees_account_id_account_realm_fkey`: `FOREIGN KEY (account_id, account_realm) REFERENCES accounts(id, realm) ON DELETE RESTRICT`
 - `employees_account_realm_not_null`: `NOT NULL account_realm`
@@ -428,6 +459,7 @@ Chỉ mục:
 
 Ràng buộc:
 
+- `goods_receipts_business_code_format`: `CHECK ((receipt_code ~ '^PN[0-9]{2,}$'::text))`
 - `goods_receipts_status_check`: `CHECK ((status = ANY (ARRAY['DRAFT'::text, 'POSTED'::text, 'CANCELLED'::text])))`
 - `goods_receipts_employee_id_fkey`: `FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE RESTRICT`
 - `goods_receipts_supplier_id_fkey`: `FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE RESTRICT`
@@ -530,6 +562,7 @@ Chỉ mục:
 
 Ràng buộc:
 
+- `inventory_adjustments_business_code_format`: `CHECK ((adjustment_code ~ '^DC[0-9]{2,}$'::text))`
 - `inventory_adjustments_status_check`: `CHECK ((status = ANY (ARRAY['DRAFT'::text, 'POSTED'::text, 'CANCELLED'::text])))`
 - `inventory_adjustments_employee_id_fkey`: `FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE RESTRICT`
 - `inventory_adjustments_adjustment_code_not_null`: `NOT NULL adjustment_code`
@@ -631,6 +664,7 @@ Tổng giá gốc dòng hàng; ưu đãi và phí giao hàng theo dõi tại đ�
 
 Ràng buộc:
 
+- `invoices_business_code_format`: `CHECK ((invoice_code ~ '^HD[0-9]{2,}$'::text))`
 - `invoices_status_check`: `CHECK ((status = ANY (ARRAY['DRAFT'::text, 'POSTED'::text, 'CANCELLED'::text])))`
 - `invoices_employee_id_fkey`: `FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE RESTRICT`
 - `invoices_order_id_fkey`: `FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE RESTRICT`
@@ -786,10 +820,13 @@ Chỉ mục:
 | `created_at` | `timestamp with time zone` | Có | now() |
 | `updated_at` | `timestamp with time zone` | Có | now() |
 | `version` | `integer` | Có | 1 |
+| `code` | `text` | Có | halora_code('KMHD'::text) |
 
 Ràng buộc:
 
+- `order_promotion_rules_code_check`: `CHECK ((code ~ '^KMHD[0-9]{2,}$'::text))`
 - `order_promotion_rules_promotion_id_fkey`: `FOREIGN KEY (promotion_id) REFERENCES promotions(id) ON DELETE RESTRICT`
+- `order_promotion_rules_code_not_null`: `NOT NULL code`
 - `order_promotion_rules_created_at_not_null`: `NOT NULL created_at`
 - `order_promotion_rules_discount_percent_not_null`: `NOT NULL discount_percent`
 - `order_promotion_rules_id_not_null`: `NOT NULL id`
@@ -798,9 +835,11 @@ Ràng buộc:
 - `order_promotion_rules_updated_at_not_null`: `NOT NULL updated_at`
 - `order_promotion_rules_version_not_null`: `NOT NULL version`
 - `order_promotion_rules_pkey`: `PRIMARY KEY (id)`
+- `order_promotion_rules_code_key`: `UNIQUE (code)`
 
 Chỉ mục:
 
+- `CREATE UNIQUE INDEX order_promotion_rules_code_key ON public.order_promotion_rules USING btree (code)`
 - `CREATE UNIQUE INDEX order_promotion_rules_pkey ON public.order_promotion_rules USING btree (id)`
 
 ### order_status_history
@@ -865,6 +904,7 @@ Chỉ mục:
 
 Ràng buộc:
 
+- `orders_business_code_format`: `CHECK ((order_code ~ '^DH[0-9]{2,}$'::text))`
 - `orders_check`: `CHECK (((((product_discount_amount)::numeric + (order_discount_amount)::numeric) + (voucher_discount_amount)::numeric) <= (subtotal_amount)::numeric))`
 - `orders_check1`: `CHECK (((total_amount)::numeric = (((((subtotal_amount)::numeric - (product_discount_amount)::numeric) - (order_discount_amount)::numeric) - (voucher_discount_amount)::numeric) + (shipping_fee)::numeric)))`
 - `orders_payment_method_check`: `CHECK ((payment_method = ANY (ARRAY['COD'::text, 'BANK_TRANSFER'::text])))`
@@ -1037,13 +1077,16 @@ Chỉ mục:
 | `created_at` | `timestamp with time zone` | Có | now() |
 | `updated_at` | `timestamp with time zone` | Có | now() |
 | `version` | `integer` | Có | 1 |
+| `code` | `text` | Có | halora_code('KMSP'::text) |
 
 Ràng buộc:
 
-- `product_promotion_rules_min_quantity_check`: `CHECK ((min_quantity > 0))`
+- `product_promotion_rules_code_check`: `CHECK ((code ~ '^KMSP[0-9]{2,}$'::text))`
+- `product_promotion_rules_min_quantity_check`: `CHECK ((min_quantity >= 0))`
 - `product_promotion_rules_product_id_fkey`: `FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT`
 - `product_promotion_rules_product_id_variant_id_fkey`: `FOREIGN KEY (product_id, variant_id) REFERENCES product_variants(product_id, id) ON DELETE RESTRICT`
 - `product_promotion_rules_promotion_id_fkey`: `FOREIGN KEY (promotion_id) REFERENCES promotions(id) ON DELETE RESTRICT`
+- `product_promotion_rules_code_not_null`: `NOT NULL code`
 - `product_promotion_rules_created_at_not_null`: `NOT NULL created_at`
 - `product_promotion_rules_discount_percent_not_null`: `NOT NULL discount_percent`
 - `product_promotion_rules_id_not_null`: `NOT NULL id`
@@ -1053,9 +1096,11 @@ Ràng buộc:
 - `product_promotion_rules_updated_at_not_null`: `NOT NULL updated_at`
 - `product_promotion_rules_version_not_null`: `NOT NULL version`
 - `product_promotion_rules_pkey`: `PRIMARY KEY (id)`
+- `product_promotion_rules_code_key`: `UNIQUE (code)`
 
 Chỉ mục:
 
+- `CREATE UNIQUE INDEX product_promotion_rules_code_key ON public.product_promotion_rules USING btree (code)`
 - `CREATE UNIQUE INDEX product_promotion_rules_pkey ON public.product_promotion_rules USING btree (id)`
 
 ### product_variants
@@ -1064,7 +1109,7 @@ Chỉ mục:
 |---|---|---|---|
 | `id` | `uuid` | Có | gen_random_uuid() |
 | `product_id` | `uuid` | Có | — |
-| `sku` | `text` | Có | — |
+| `sku` | `text` | Có | halora_code('SKU'::text) |
 | `name` | `text` | Có | — |
 | `color` | `text` | Không | — |
 | `volume_ml` | `double precision` | Không | — |
@@ -1079,6 +1124,7 @@ Chỉ mục:
 
 Ràng buộc:
 
+- `product_variants_business_code_format`: `CHECK ((sku ~ '^SKU[0-9]{2,}$'::text))`
 - `product_variants_low_stock_threshold_check`: `CHECK ((low_stock_threshold >= 0))`
 - `product_variants_status_check`: `CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'INACTIVE'::text])))`
 - `product_variants_volume_ml_check`: `CHECK ((volume_ml > (0)::double precision))`
@@ -1121,12 +1167,15 @@ Chỉ mục:
 | `created_at` | `timestamp with time zone` | Có | now() |
 | `updated_at` | `timestamp with time zone` | Có | now() |
 | `version` | `integer` | Có | 1 |
+| `thumbnail_media_id` | `uuid` | Không | — |
 
 Ràng buộc:
 
+- `products_business_code_format`: `CHECK ((code ~ '^SP[0-9]{2,}$'::text))`
 - `products_status_check`: `CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'INACTIVE'::text])))`
 - `products_brand_id_fkey`: `FOREIGN KEY (brand_id) REFERENCES brands(id) ON DELETE RESTRICT`
 - `products_category_id_fkey`: `FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE RESTRICT`
+- `products_thumbnail_media_id_fkey`: `FOREIGN KEY (thumbnail_media_id) REFERENCES media_assets(id) ON DELETE RESTRICT`
 - `products_brand_id_not_null`: `NOT NULL brand_id`
 - `products_category_id_not_null`: `NOT NULL category_id`
 - `products_code_not_null`: `NOT NULL code`
@@ -1149,6 +1198,40 @@ Chỉ mục:
 - `CREATE UNIQUE INDEX products_code_key ON public.products USING btree (code)`
 - `CREATE UNIQUE INDEX products_pkey ON public.products USING btree (id)`
 - `CREATE UNIQUE INDEX products_slug_key ON public.products USING btree (slug)`
+- `CREATE INDEX products_thumbnail_media_idx ON public.products USING btree (thumbnail_media_id) WHERE (thumbnail_media_id IS NOT NULL)`
+
+### promotion_usage
+
+| Cột | Kiểu PostgreSQL | Bắt buộc | Mặc định |
+|---|---|---|---|
+| `id` | `uuid` | Có | gen_random_uuid() |
+| `promotion_id` | `uuid` | Có | — |
+| `product_rule_id` | `uuid` | Không | — |
+| `order_rule_id` | `uuid` | Không | — |
+| `voucher_id` | `uuid` | Không | — |
+| `first_order_id` | `uuid` | Có | — |
+| `used_at` | `timestamp with time zone` | Có | now() |
+
+Ràng buộc:
+
+- `promotion_usage_check`: `CHECK ((num_nonnulls(product_rule_id, order_rule_id, voucher_id) = 1))`
+- `promotion_usage_first_order_id_fkey`: `FOREIGN KEY (first_order_id) REFERENCES orders(id) ON DELETE RESTRICT`
+- `promotion_usage_order_rule_id_fkey`: `FOREIGN KEY (order_rule_id) REFERENCES order_promotion_rules(id) ON DELETE RESTRICT`
+- `promotion_usage_product_rule_id_fkey`: `FOREIGN KEY (product_rule_id) REFERENCES product_promotion_rules(id) ON DELETE RESTRICT`
+- `promotion_usage_promotion_id_fkey`: `FOREIGN KEY (promotion_id) REFERENCES promotions(id) ON DELETE RESTRICT`
+- `promotion_usage_voucher_id_fkey`: `FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE RESTRICT`
+- `promotion_usage_first_order_id_not_null`: `NOT NULL first_order_id`
+- `promotion_usage_id_not_null`: `NOT NULL id`
+- `promotion_usage_promotion_id_not_null`: `NOT NULL promotion_id`
+- `promotion_usage_used_at_not_null`: `NOT NULL used_at`
+- `promotion_usage_pkey`: `PRIMARY KEY (id)`
+- `promotion_usage_product_rule_id_order_rule_id_voucher_id_key`: `UNIQUE NULLS NOT DISTINCT (product_rule_id, order_rule_id, voucher_id)`
+
+Chỉ mục:
+
+- `CREATE UNIQUE INDEX promotion_usage_pkey ON public.promotion_usage USING btree (id)`
+- `CREATE UNIQUE INDEX promotion_usage_product_rule_id_order_rule_id_voucher_id_key ON public.promotion_usage USING btree (product_rule_id, order_rule_id, voucher_id) NULLS NOT DISTINCT`
+- `CREATE INDEX promotion_usage_promotion_idx ON public.promotion_usage USING btree (promotion_id)`
 
 ### promotions
 
@@ -1167,6 +1250,7 @@ Chỉ mục:
 
 Ràng buộc:
 
+- `promotions_business_code_format`: `CHECK ((code ~ '^KM[0-9]{2,}$'::text))`
 - `promotions_check`: `CHECK ((starts_at <= ends_at))`
 - `promotions_status_check`: `CHECK ((status = ANY (ARRAY['DRAFT'::text, 'ACTIVE'::text, 'PAUSED'::text, 'ENDED'::text])))`
 - `promotions_code_not_null`: `NOT NULL code`
@@ -1369,6 +1453,7 @@ Chỉ mục:
 
 Ràng buộc:
 
+- `suppliers_business_code_format`: `CHECK ((code ~ '^NCC[0-9]{2,}$'::text))`
 - `suppliers_status_check`: `CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'INACTIVE'::text])))`
 - `suppliers_address_not_null`: `NOT NULL address`
 - `suppliers_code_not_null`: `NOT NULL code`
@@ -1427,7 +1512,7 @@ Chỉ mục:
 |---|---|---|---|
 | `id` | `uuid` | Có | gen_random_uuid() |
 | `promotion_id` | `uuid` | Có | — |
-| `code` | `text` | Có | — |
+| `code` | `text` | Có | halora_code('VC'::text) |
 | `discount_percent` | `discount_percent` | Có | — |
 | `min_order_amount` | `money_vnd` | Có | — |
 | `max_discount_amount` | `money_vnd` | Không | — |
@@ -1440,8 +1525,9 @@ Chỉ mục:
 
 Ràng buộc:
 
-- `vouchers_max_uses_check`: `CHECK ((max_uses > 0))`
-- `vouchers_per_customer_limit_check`: `CHECK ((per_customer_limit > 0))`
+- `vouchers_business_code_format`: `CHECK ((code ~ '^VC[0-9]{2,}$'::text))`
+- `vouchers_max_uses_check`: `CHECK ((max_uses >= 0))`
+- `vouchers_per_customer_limit_check`: `CHECK ((per_customer_limit >= 0))`
 - `vouchers_status_check`: `CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'INACTIVE'::text])))`
 - `vouchers_promotion_id_fkey`: `FOREIGN KEY (promotion_id) REFERENCES promotions(id) ON DELETE RESTRICT`
 - `vouchers_code_not_null`: `NOT NULL code`
@@ -1467,11 +1553,15 @@ Các view ánh xạ dữ liệu sang DTO; SQL đầy đủ có trong schema.
 
 - `api_accounts`
 - `api_balances`
+- `api_brands`
 - `api_customers`
 - `api_discounts`
 - `api_employees`
 - `api_images`
+- `api_order_promotion_rules`
 - `api_orders`
+- `api_product_promotion_rules`
+- `api_products`
 - `api_promotions`
 - `api_public_products`
 - `api_roles`

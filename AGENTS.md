@@ -32,9 +32,13 @@ Backend đã triển khai theo hợp đồng OpenAPI. Giữ cấu trúc giao di�
 
 - Dùng cụm **loại sản phẩm** cho nội dung tiếng Việt. Tên kỹ thuật `categories` và `categoryId` được giữ trong API/database.
 - Giao diện, nhãn trạng thái và thông báo người dùng bằng tiếng Việt.
+- Mã nghiệp vụ dùng tiền tố và số thứ tự tối thiểu hai chữ số: TK01, NV01, KH01, LSP01, TH01, SP01, SKU01, NCC01, KM01, VC01, DH01, PN01, HD01, DC01. Không dùng DEMO hoặc dấu gạch nối trong mã. UUID là khóa liên kết nội bộ; hiển thị code/SKU trên giao diện. Bộ đếm độc lập cho mỗi tiền tố, không cắt số khi vượt 99.
 - Hiển thị tiền VND, ngày giờ theo `Asia/Ho_Chi_Minh`. API truyền ngày giờ ISO 8601.
+- Dữ liệu được nạp theo yêu cầu để test không gắn nhãn `(mẫu)`, `[Mẫu]`, chữ mẫu hoặc hậu tố Demo trong nội dung hiển thị. Áp dụng cho mọi nhóm dữ liệu và các tên/ghi chú snapshot trên giao dịch; không thay username, email, mã nghiệp vụ hoặc giá trị tài chính để đổi nhãn.
 
 ## Không sử dụng dữ liệu nghiệp vụ giả
+
+- Ngoại lệ theo yêu cầu trực tiếp của người dùng: `database/seed-demo.sql` là bộ mẫu để test trên database Docker cục bộ; chỉ nạp bằng lệnh riêng `pnpm db:seed:demo:docker`. Mỗi vai trò SALES/WAREHOUSE/ACCOUNTANT/CUSTOMER có 3 tài khoản mẫu; không tạo thêm ADMIN. Lần nạp đầu đổi mật khẩu admin hiện có và tài khoản mẫu thành `123456`, lưu Argon2id. Không áp dụng ngoại lệ này cho validation mật khẩu mới, mock API, dữ liệu frontend hay tự seed khi khởi động. Chạy lại bộ mẫu không ghi đè thay đổi đã phát sinh.
 
 - Không tạo mock API, Faker, fixture, mảng nghiệp vụ hardcode hoặc kết quả thao tác thành công giả để lấp giao diện.
 - Không dùng localStorage, AsyncStorage hoặc file JSON làm database nghiệp vụ.
@@ -52,6 +56,8 @@ Backend đã triển khai theo hợp đồng OpenAPI. Giữ cấu trúc giao di�
 - Hợp đồng đã thống nhất được ghi trong OpenAPI; types của API client được duy trì đồng bộ. Backend kiểm tra đủ handler cho mọi operation khi khởi động.
 - Mọi thay đổi hợp đồng phải cập nhật OpenAPI, API client, các bên sử dụng và tài liệu mapping màn hình/API trong cùng thay đổi.
 - Backend quyết định quyền truy cập, quyền sở hữu dữ liệu, giá, khuyến mãi, phí giao hàng, tiền thu/hoàn và tồn kho. Frontend gửi yêu cầu và hiển thị kết quả.
+- Khuyến mãi: giữ bốn bảng cấu hình chương trình/sản phẩm/hóa đơn/voucher; mã điều kiện KMSP01/KMHD01. Chọn một ưu đãi sản phẩm tốt nhất mỗi dòng, một ưu đãi hóa đơn tốt nhất, rồi tối đa một voucher; không giảm phí giao hàng. Snapshot trên đơn cũ bất biến khi sửa cấu hình cho đơn mới. Sổ `promotion_usage` bảo vệ cấu hình từng dùng khỏi bị xóa, kể cả khi đơn chờ được sửa bỏ ưu đãi. Voucher HELD khi đặt, USED khi xác nhận, RELEASED khi hủy hợp lệ; khóa và Idempotency-Key chống vượt hoặc tính lặp lượt. Giới hạn/trần bằng 0 khác null.
+- Sản phẩm/thương hiệu dùng `thumbnailMediaId` và `thumbnailUrl` cho ảnh đại diện. Upload qua API client `/admin/media`, lưu bằng PUT `/admin/products/{id}/thumbnail` hoặc `/admin/brands/{id}/thumbnail` với mediaId/version; CRUD input hỗ trợ thumbnailMediaId tùy chọn. Không tự nhập URL ngoài, không tạo ảnh giả; giữ file trong volume uploads. Ảnh đại diện sản phẩm đồng bộ với danh sách/app và cart/quote; không đổi snapshot giao dịch cũ.
 - Refresh token web dùng cookie HttpOnly; app dùng SecureStore. Không lưu refresh token trong localStorage.
 - Chỉ cập nhật trạng thái thành công sau phản hồi API thành công. Xử lý lỗi validation, thiếu quyền, xung đột version và lỗi mạng rõ ràng.
 
@@ -64,6 +70,7 @@ Backend đã triển khai theo hợp đồng OpenAPI. Giữ cấu trúc giao di�
 - Lưu snapshot tên hàng, biến thể, giá, ưu đãi và địa chỉ trên giao dịch; sửa hồ sơ hay sản phẩm không được làm đổi lịch sử.
 - Không sửa/xóa trực tiếp chứng từ đã ghi nhận. Dữ liệu đã được tham chiếu cần ngừng hoạt động, hủy hoặc điều chỉnh theo quy trình.
 - Vai trò mặc định: quản trị viên, bán hàng, kho, kế toán và khách hàng. Backend kiểm tra cả quyền thao tác và quyền sở hữu.
+- Mỗi vai trò có bộ quyền cố định do migration quy định. Phân quyền là gán vai trò cho tài khoản; dùng `PUT /admin/accounts/{id}/roles` với version tài khoản. Không có API/giao diện sửa quyền vai trò. CUSTOMER luôn là khách hàng, không chuyển sang vai trò nhân viên. Chỉ ADMIN gán vai trò, thu hồi phiên tài khoản được đổi và giữ ít nhất một ADMIN hoạt động.
 
 ## Database và bảo mật
 
@@ -87,10 +94,12 @@ Backend đã triển khai theo hợp đồng OpenAPI. Giữ cấu trúc giao di�
 - Khởi động bản build: `docker compose up --build -d`; development: `docker compose -f compose.yaml -f compose.dev.yaml up --build -d`.
 - Chỉ chạy hạ tầng cho code chạy host: `docker compose -f compose.yaml -f compose.dev.yaml up -d db mailpit`.
 - Migration: `pnpm db:migrate`; tạo quản trị: `pnpm db:bootstrap` hoặc `pnpm db:bootstrap:docker`.
+- Nạp bộ mẫu theo yêu cầu để test cục bộ: `pnpm db:seed:demo:docker` (backup trước, chỉ import lần đầu; không chạy tự động khi khởi động).
 - Build server/web/client: `pnpm build`; kiểm tra kiểu: `pnpm typecheck`; lint hiện là TypeScript: `pnpm lint`.
 - Kiểm thử: `pnpm test`; tích hợp cần `TEST_DATABASE_URL` trên PostgreSQL 18 cho phép tạo database riêng. `HALORA_BROWSER_TEST=true` bật trình duyệt thật; `MAILPIT_TEST_URL` bật kiểm tra SMTP thật.
 - Đối chiếu schema: `pnpm db:verify-schema`; xuất schema: `pnpm db:export-schema` trên database sạch đã migrate.
 - Đóng gói JS Android: `pnpm --filter @halora/mobile exec expo export --platform android --output-dir ../../.local/mobile-export`.
+- APK máy ảo Windows: `pnpm android:build:local`; cài/cập nhật: `pnpm android:install:local`; chạy lần sau: `pnpm android:run:local`. Script dùng SDK/JDK17/Gradle cache tại D:\Android, có tham số đổi đường dẫn. APK x86_64 kèm bundle JS, ký debug để test cục bộ, dùng adb reverse 8081; không dùng làm bản phát hành. Native folders android/ios được Expo prebuild sinh và bỏ qua Git. Plugin chỉ cho HTTP ở localhost/127.0.0.1/10.0.2.2; host khác phải HTTPS.
 - Backup: `pnpm db:backup:docker`; thử restore riêng: `pnpm db:restore-check:docker <đường-dẫn-tuyệt-đối-file.dump>`.
 - Kiểm tra cấu hình Docker: `docker compose config --quiet`
 - Dừng Docker: `docker compose stop`

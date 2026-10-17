@@ -18,6 +18,7 @@
     "db:export-schema": "tsx scripts/export-schema.ts",
     "db:verify-schema": "tsx scripts/verify-schema.ts",
     "db:backup:docker": "tsx scripts/backup-docker.ts",
+    "db:seed:demo:docker": "tsx scripts/seed-demo-docker.ts",
     "db:restore-check:docker": "tsx scripts/restore-check-docker.ts",
     "test": "jest --runInBand",
     "test:integration": "jest --runInBand --testPathPattern=integration"

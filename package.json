@@ -12,6 +12,9 @@
     "lint": "pnpm -r run lint",
     "dev:admin": "pnpm --filter @halora/admin dev",
     "dev:mobile": "pnpm --filter @halora/mobile start",
+    "android:build:local": "node infra/scripts/android-local.mjs build",
+    "android:run:local": "node infra/scripts/android-local.mjs run",
+    "android:install:local": "node infra/scripts/android-local.mjs install",
     "dev:api": "pnpm --filter @halora/api dev",
     "db:migrate": "pnpm --filter @halora/api db:migrate",
     "db:bootstrap": "pnpm --filter @halora/api db:bootstrap",
@@ -19,6 +22,7 @@
     "db:export-schema": "pnpm --filter @halora/api db:export-schema",
     "db:verify-schema": "pnpm --filter @halora/api db:verify-schema",
     "db:backup:docker": "pnpm --filter @halora/api db:backup:docker",
+    "db:seed:demo:docker": "pnpm --filter @halora/api db:seed:demo:docker",
     "db:restore-check:docker": "pnpm --filter @halora/api db:restore-check:docker",
     "test": "pnpm --filter @halora/api test"
   },

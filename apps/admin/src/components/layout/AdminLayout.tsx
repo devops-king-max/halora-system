@@ -174,7 +174,7 @@ export const AdminLayout: React.FC = () => {
         hasPermission("roles.read") && {
           key: "/roles",
           icon: <SafetyCertificateOutlined />,
-          label: <Link to="/roles">Vai trò & Quyền</Link>,
+          label: <Link to="/roles">Phân quyền</Link>,
         },
       ].filter(Boolean) as MenuProps["items"],
     },

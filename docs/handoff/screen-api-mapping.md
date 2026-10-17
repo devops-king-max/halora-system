@@ -6,6 +6,8 @@ Tài liệu này đặc tả chi tiết toàn bộ các màn hình trên **Web Q
 
 ## 1. Web Quản trị (`apps/admin`)
 
+Ảnh đại diện trên bảng Sản phẩm/Thương hiệu: `POST /api/v1/admin/media` (multipart `file`) trả MediaAsset; lưu bằng `PUT /api/v1/admin/products/:id/thumbnail` hoặc `PUT /api/v1/admin/brands/:id/thumbnail` với `{ mediaId, version }`. Response là Product/Brand, gồm `thumbnailMediaId`, `thumbnailUrl`; version thuộc bản ghi đích. Form tạo/sửa gửi `thumbnailMediaId` tùy chọn trong input hiện có. Không gửi URL tự nhập. Cột ảnh có preview và nút tải/thay; lưu thành công mới cập nhật danh sách, lỗi 409 yêu cầu đóng/mở để lấy version mới. Upload/lưu lỗi giữ thông báo và không báo thành công giả.
+
 Tất cả các endpoint quản trị đều có tiền tố `/api/v1/admin` (trừ xác thực tại `/api/v1/auth/staff/*`). Refresh token quản trị được lưu trữ trong HttpOnly Cookie; Access token được lưu trong bộ nhớ (in-memory).
 
 ### 1.1. Xác thực & Hồ sơ cá nhân
@@ -87,7 +89,7 @@ Tất cả các endpoint quản trị đều có tiền tố `/api/v1/admin` (tr
 | **Chi tiết nhân viên** (`/employees/:id`) | Xem hồ sơ và gán vai trò | `GET /api/v1/admin/employees/:id`<br/>`GET /api/v1/admin/roles` | ID nhân viên | Chi tiết nhân viên, vai trò đã gán, danh sách vai trò hệ thống | Quản lý vai trò nhân viên. |
 | **Cấp tài khoản đăng nhập** (`/employees/:id`) | Tạo tài khoản đăng nhập cho nhân viên | `POST /api/v1/admin/employees/:id/account` | `{ username, email, password }` | `{ data: Account }` | Hiển thị thông tin tài khoản đã tạo. |
 | **Gán vai trò** (`/employees/:id`) | Chọn vai trò (`ADMIN`, `SALES`, `WAREHOUSE`, `ACCOUNTANT`) | `PUT /api/v1/admin/employees/:id/roles` | `{ roleIds: UUID[], version }` | `{ data: Employee }` | Cập nhật vai trò tức thì trên giao diện. |
-| **Danh sách vai trò & Quyền** (`/roles`) | Quản lý ma trận phân quyền | `GET /api/v1/admin/roles`<br/>`GET /api/v1/admin/permissions` | Không có params | Danh sách vai trò và tất cả permission mã hóa | Xem và cấu hình quyền hạn chi tiết. |
+| **Phân quyền tài khoản** (`/roles`, `/accounts`) | Gán vai trò cho từng tài khoản nhân viên | `GET /api/v1/admin/accounts`<br/>`GET /api/v1/admin/roles`<br/>`PUT /api/v1/admin/accounts/:id/roles` | `{ roleIds: UUID[], version }`, version của Account | `{ data: Account }` gồm code, roleIds | Hiển thị TK01 và tên vai trò. CUSTOMER cố định; lưu xong tải lại danh sách, tài khoản đích đăng nhập lại. Không có API sửa quyền vai trò. |
 
 ---
 
@@ -117,9 +119,12 @@ Tất cả các endpoint quản trị đều có tiền tố `/api/v1/admin` (tr
 
 | Màn hình | Thao tác người dùng | Phương thức & Endpoint | Dữ liệu gửi (Request) | Dữ liệu trả về (Response) | Trạng thái giao diện |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Danh sách chương trình KM** (`/promotions`) | Quản lý ưu đãi | `GET /api/v1/admin/promotions` | Params: `page, limit, search, status` | `{ data: Promotion[], meta: PaginationMeta }` | Bảng thời gian hiệu lực và trạng thái. |
+| **Danh sách chương trình KM** (`/promotions`) | Quản lý ưu đãi | `GET /api/v1/admin/promotions` | Params: `page, limit, search, status, from, to, productId` | `{ data: Promotion[], meta: PaginationMeta }` | Tìm mã/tên; lọc khoảng hiệu lực giao nhau, sản phẩm, trạng thái; phân biệt đã bật và đang trong thời hạn. |
 | **Tạo chương trình KM** (`/promotions`) | Tạo ưu đãi mới | `POST /api/v1/admin/promotions` | `{ name, description, startsAt, endsAt, status }` | `{ data: Promotion }` | Chuyển đến trang chi tiết để thiết lập quy tắc giảm giá. |
 | **Cấu hình giảm giá đơn / SP / Voucher** (`/promotions/:id`) | Thiết lập rule giảm giá và phát hành mã voucher | `POST /api/v1/admin/promotions/:id/product-rules`<br/>`POST /api/v1/admin/promotions/:id/order-rules`<br/>`POST /api/v1/admin/promotions/:id/vouchers` | Chi tiết quy tắc giảm giá (discountPercent, maxDiscountAmount, ngưỡng tối thiểu và giới hạn lượt) | Dữ liệu quy tắc/voucher được lưu | Cập nhật cấu hình ưu đãi. Backend quyết định tính toán giá cuối cùng. |
+| **Tra cứu điều kiện** (`/promotions/:id`) | Ba tab theo sản phẩm, hóa đơn, voucher | `GET /api/v1/admin/promotions/:id/{product-rules,order-rules,vouchers}` | `page, limit, search` | `{ data, meta }`; có `code, hasUsage, version`; voucher có `usedCount, reservedCount` | Hiển thị KMSP/KMHD/VC, tìm kiếm và phân trang từ server, lỗi có nút thử lại. |
+| **Sửa điều kiện** (`/promotions/:id`) | Mở sửa và lưu phần trăm/ngưỡng/trần/giới hạn | `PATCH /api/v1/admin/promotions/:id/{product-rules,order-rules,vouchers}/:conditionId` | Các trường input tương ứng và `version` | Điều kiện sau cập nhật | Đã dùng vẫn sửa mức giảm cho đơn mới, giữ phạm vi sản phẩm/biến thể và mã voucher; ENDED khóa sửa. Trần 0 giảm 0; null không trần. |
+| **Xóa điều kiện/chương trình** | Xóa cấu hình chưa từng dùng | `DELETE /api/v1/admin/promotions/:id` hoặc endpoint điều kiện ở trên | Query `version` của bản ghi | `204 No Content` | Ẩn/khóa nút khi `hasUsage`; backend kiểm tra lại. Cấu hình đã dùng chỉ ngừng/kết thúc, không xóa. |
 
 ---
 
@@ -158,7 +163,7 @@ Màn **Chỉnh sửa thông tin cá nhân** (`app/profile.tsx`) gọi `GET/PATCH
 
 | Màn hình | Thao tác người dùng | Phương thức & Endpoint | Dữ liệu gửi (Request) | Dữ liệu trả về (Response) | Trạng thái giao diện |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Đăng nhập** (`app/login.tsx`) | Nhập email, mật khẩu | `POST /api/v1/auth/customer/login` | `{ identifier: email, password }` | `{ accessToken, refreshToken, principal }` | Lưu refreshToken vào SecureStore; lấy hồ sơ từ `/me/profile`; quay lại màn hình trước. |
+| **Đăng nhập** (`app/login.tsx`) | Nhập tên đăng nhập hoặc email, mật khẩu | `POST /api/v1/auth/customer/login` | `{ identifier, password }` | `{ accessToken, refreshToken, principal }` | Lưu refreshToken vào SecureStore; lấy hồ sơ từ `/me/profile`; quay lại màn hình trước hoặc trang tài khoản nếu mở từ deep link. |
 | **Đăng ký** (`app/register.tsx`) | Nhập tên đăng nhập, họ tên, email, sđt, mật khẩu | `POST /api/v1/auth/customer/register` sau đó tự động login | `{ fullName, username, email, phone, password }` | `{ customerId, accountId }` | Tự động đăng nhập và lưu token vào SecureStore. |
 | **Quên mật khẩu** (`app/forgot-password.tsx`) | Nhập email yêu cầu đặt lại | `POST /api/v1/auth/customer/forgot-password` | `{ email }` | `{ message }` | Hiển thị thông báo kiểm tra hòm thư và liên kết sang màn reset mật khẩu. |
 | **Đặt lại mật khẩu** (`app/reset-password.tsx`) | Nhập token từ email và mật khẩu mới | `POST /api/v1/auth/customer/reset-password` | `{ token, newPassword }` | `{ message }` | Thông báo thành công và chuyển về màn đăng nhập. |

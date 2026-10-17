@@ -4,6 +4,7 @@ import type {
   AccountProfileUpdateInput,
   AccountRealm,
   AccountStatusUpdateInput,
+  AccountRoleAssignInput,
   ActionInput,
   ApiError,
   ApiErrorResponse,
@@ -68,7 +69,6 @@ import type {
   ReportData,
   ReportFilterQuery,
   Role,
-  RolePermissionAssignInput,
   StaffAuthResult,
   StockMovement,
   Supplier,
@@ -510,6 +510,9 @@ export class HaloraApiClient {
 
   // ================= BRANDS =================
   public readonly brands = {
+    setThumbnail: (id: UUID, input: { mediaId: UUID | null; version: number }) =>
+      this.request<ApiResponse<Brand>>(`/admin/brands/${id}/thumbnail`, { method: "PUT", body: input }).then(r => r.data),
+
     listPublic: (query?: ListQuery) =>
       this.request<PaginatedResponse<Brand>>("/brands", {
         method: "GET",
@@ -544,6 +547,9 @@ export class HaloraApiClient {
 
   // ================= PRODUCTS =================
   public readonly products = {
+    setThumbnail: (id: UUID, input: { mediaId: UUID | null; version: number }) =>
+      this.request<ApiResponse<Product>>(`/admin/products/${id}/thumbnail`, { method: "PUT", body: input }).then(r => r.data),
+
     listPublic: (query?: ProductFilterQuery) =>
       this.request<PaginatedResponse<PublicProductSummary>>("/products", {
         method: "GET",
@@ -1001,7 +1007,7 @@ export class HaloraApiClient {
 
   // ================= PROMOTIONS =================
   public readonly promotions = {
-    listAdmin: (query?: ListQuery & { status?: string }) =>
+    listAdmin: (query?: ListQuery & { status?: string; type?: Promotion["type"]; from?: string; to?: string; productId?: UUID }) =>
       this.request<PaginatedResponse<Promotion>>("/admin/promotions", {
         method: "GET",
         params: query as Record<string, unknown>,
@@ -1174,6 +1180,9 @@ export class HaloraApiClient {
     getAdmin: (id: UUID) =>
       this.request<ApiResponse<Account>>(`/admin/accounts/${id}`, { method: "GET" }).then((r) => r.data),
 
+    assignRoles: (id: UUID, input: AccountRoleAssignInput) =>
+      this.request<ApiResponse<Account>>(`/admin/accounts/${id}/roles`, { method: "PUT", body: input }).then(r => r.data),
+
     updateStatus: (id: UUID, input: AccountStatusUpdateInput) =>
       this.request<ApiResponse<Account>>(`/admin/accounts/${id}`, {
         method: "PATCH",
@@ -1189,11 +1198,6 @@ export class HaloraApiClient {
     listPermissionsAdmin: () =>
       this.request<ApiResponse<Permission[]>>("/admin/permissions", { method: "GET" }).then((r) => r.data),
 
-    assignPermissions: (id: UUID, input: RolePermissionAssignInput) =>
-      this.request<ApiResponse<Role>>(`/admin/roles/${id}/permissions`, {
-        method: "PATCH",
-        body: input,
-      }).then((r) => r.data),
   };
 
   // ================= DASHBOARD & REPORTS =================

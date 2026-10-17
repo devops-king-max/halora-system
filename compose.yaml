@@ -99,6 +99,24 @@ services:
       retries: 6
       start_period: 10s
 
+  seed-demo:
+    image: postgres:18
+    profiles: [tools]
+    restart: "no"
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB:-halora}
+      PGUSER: ${POSTGRES_USER:-halora_app}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - ./database/seed-demo.sql:/seed/seed-demo.sql:ro
+    networks: [halora]
+    depends_on:
+      db: {condition: service_healthy}
+    entrypoint: [psql]
+    command: [--no-psqlrc, --set, ON_ERROR_STOP=1, --file, /seed/seed-demo.sql]
+
 volumes:
   postgres_data:
   uploads:

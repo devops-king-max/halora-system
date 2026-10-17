@@ -12,7 +12,7 @@ export class CustomerService {
   async cartDetail(customerId:unknown):Promise<Row>{
     const cart=await this.cart(customerId);
     const items=await this.db.query(`SELECT ci.id,ci.product_id,ci.variant_id,p.name AS product_name,v.name AS variant_name,v.sku,
-      (SELECT i.url FROM api_images i WHERE i.product_id=p.id AND (i.variant_id IS NULL OR i.variant_id=v.id) ORDER BY (i.variant_id=v.id) DESC NULLS LAST,i.sort_order,i.id LIMIT 1) AS thumbnail_url,
+      COALESCE((SELECT i.url FROM api_images i WHERE i.product_id=p.id AND i.variant_id=v.id ORDER BY i.sort_order,i.id LIMIT 1),(SELECT m.url FROM media_assets m WHERE m.id=p.thumbnail_media_id),(SELECT i.url FROM api_images i WHERE i.product_id=p.id AND i.variant_id IS NULL ORDER BY i.sort_order,i.id LIMIT 1)) AS thumbnail_url,
       ci.quantity,v.sale_price AS unit_price,(ci.quantity*v.sale_price)::numeric(18,0) AS line_subtotal,b.stock_quantity,
       (v.status='ACTIVE' AND p.status='ACTIVE' AND c.status='ACTIVE' AND br.status='ACTIVE' AND b.stock_quantity>0) AS is_available
       FROM cart_items ci JOIN product_variants v ON v.id=ci.variant_id JOIN products p ON p.id=v.product_id JOIN categories c ON c.id=p.category_id JOIN brands br ON br.id=p.brand_id JOIN inventory_balances b ON b.variant_id=v.id WHERE ci.cart_id=$1 ORDER BY ci.id`,[cart.id]);

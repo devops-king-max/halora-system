@@ -1,3 +1,4 @@
+import { BusinessCodeSelect } from "../../components/common/BusinessCodeSelect";
 import React, { useState } from "react";
 import {
   Typography,
@@ -305,10 +306,10 @@ export const GoodsReceiptsPage: React.FC = () => {
                     <Form.Item
                       {...restField}
                       name={[name, "variantId"]}
-                      rules={[{ required: true, message: "Nhập Variant ID" }]}
+                      rules={[{ required: true, message: "Chọn biến thể" }]}
                       style={{ width: 300 }}
                     >
-                      <Input placeholder="Mã UUID của biến thể (Variant ID)" />
+                      <BusinessCodeSelect />
                     </Form.Item>
 
                     <Form.Item

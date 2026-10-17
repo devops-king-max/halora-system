@@ -1,11 +1,12 @@
 -- Halora PostgreSQL 18: install once into an empty database.
 -- Existing databases must use versioned migrations.
+-- Optional test data: import database/seed-demo.sql explicitly after bootstrap.
 --
 -- PostgreSQL database dump
 --
 
 
--- Dumped from database version 18.6
+-- Dumped from database version 18.6 (Debian 18.6-1.pgdg13+2)
 -- Dumped by pg_dump version 18.6
 
 SET statement_timeout = 0;
@@ -41,10 +42,29 @@ CREATE DOMAIN public.money_vnd AS numeric(18,0)
 --
 
 CREATE FUNCTION public.halora_code(prefix text) RETURNS text
-    LANGUAGE sql
+    LANGUAGE plpgsql
     AS $$
-  SELECT prefix || '-' || lpad(nextval('business_code_sequence')::text, 10, '0')
-$$;
+DECLARE number bigint;
+BEGIN
+ INSERT INTO business_code_counters AS counters(prefix,last_value) VALUES(prefix,1)
+ ON CONFLICT ON CONSTRAINT business_code_counters_pkey DO UPDATE SET last_value=counters.last_value+1
+ RETURNING last_value INTO number;
+ RETURN prefix || lpad(number::text,greatest(2,length(number::text)),'0');
+END $$;
+
+
+--
+-- Name: halora_remember_promotion_usage(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.halora_remember_promotion_usage() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+ INSERT INTO promotion_usage(promotion_id,product_rule_id,order_rule_id,voucher_id,first_order_id)
+ VALUES(NEW.promotion_id,NEW.product_rule_id,NEW.order_rule_id,NEW.voucher_id,NEW.order_id) ON CONFLICT DO NOTHING;
+ RETURN NEW;
+END $$;
 
 
 --
@@ -55,6 +75,22 @@ CREATE FUNCTION public.halora_touch() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN NEW.updated_at = clock_timestamp(); NEW.version = OLD.version + 1; RETURN NEW; END $$;
+
+
+--
+-- Name: halora_track_code(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.halora_track_code() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $_$
+DECLARE number bigint;
+BEGIN
+ number:=substring(to_jsonb(NEW)->>TG_ARGV[0] from '([0-9]+)$')::bigint;
+ INSERT INTO business_code_counters AS counters(prefix,last_value) VALUES(TG_ARGV[1],number)
+ ON CONFLICT ON CONSTRAINT business_code_counters_pkey DO UPDATE SET last_value=greatest(counters.last_value,excluded.last_value);
+ RETURN NEW;
+END $_$;
 
 
 SET default_tablespace = '';
@@ -76,6 +112,8 @@ CREATE TABLE public.accounts (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     version integer DEFAULT 1 NOT NULL,
+    code text DEFAULT public.halora_code('TK'::text) NOT NULL,
+    CONSTRAINT accounts_business_code_format CHECK ((code ~ '^TK[0-9]{2,}$'::text)),
     CONSTRAINT accounts_realm_check CHECK ((realm = ANY (ARRAY['STAFF'::text, 'CUSTOMER'::text]))),
     CONSTRAINT accounts_status_check CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'LOCKED'::text, 'INACTIVE'::text]))),
     CONSTRAINT accounts_username_check CHECK ((length(TRIM(BOTH FROM username)) > 0))
@@ -98,7 +136,18 @@ CREATE TABLE public.customers (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     version integer DEFAULT 1 NOT NULL,
     CONSTRAINT customers_account_realm_check CHECK ((account_realm = 'CUSTOMER'::text)),
+    CONSTRAINT customers_business_code_format CHECK ((code ~ '^KH[0-9]{2,}$'::text)),
     CONSTRAINT customers_status_check CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'INACTIVE'::text])))
+);
+
+
+--
+-- Name: employee_roles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.employee_roles (
+    employee_id uuid NOT NULL,
+    role_id uuid NOT NULL
 );
 
 
@@ -120,7 +169,23 @@ CREATE TABLE public.employees (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     version integer DEFAULT 1 NOT NULL,
     CONSTRAINT employees_account_realm_check CHECK ((account_realm = 'STAFF'::text)),
+    CONSTRAINT employees_business_code_format CHECK ((code ~ '^NV[0-9]{2,}$'::text)),
     CONSTRAINT employees_status_check CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'INACTIVE'::text])))
+);
+
+
+--
+-- Name: roles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.roles (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    code text NOT NULL,
+    name text NOT NULL,
+    description text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    version integer DEFAULT 1 NOT NULL
 );
 
 
@@ -130,6 +195,7 @@ CREATE TABLE public.employees (
 
 CREATE VIEW public.api_accounts AS
  SELECT a.id,
+    a.code,
     a.realm,
     a.username,
     a.email,
@@ -138,7 +204,15 @@ CREATE VIEW public.api_accounts AS
     a.updated_at,
     a.version,
     c.id AS customer_id,
-    e.id AS employee_id
+    e.id AS employee_id,
+        CASE
+            WHEN (a.realm = 'CUSTOMER'::text) THEN ARRAY[( SELECT roles.id
+               FROM public.roles
+              WHERE (roles.code = 'CUSTOMER'::text))]
+            ELSE COALESCE(( SELECT array_agg(er.role_id ORDER BY er.role_id) AS array_agg
+               FROM public.employee_roles er
+              WHERE (er.employee_id = e.id)), '{}'::uuid[])
+        END AS role_ids
    FROM ((public.accounts a
      LEFT JOIN public.customers c ON ((c.account_id = a.id)))
      LEFT JOIN public.employees e ON ((e.account_id = a.id)));
@@ -163,7 +237,7 @@ CREATE TABLE public.inventory_balances (
 CREATE TABLE public.product_variants (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     product_id uuid NOT NULL,
-    sku text NOT NULL,
+    sku text DEFAULT public.halora_code('SKU'::text) NOT NULL,
     name text NOT NULL,
     color text,
     volume_ml double precision,
@@ -175,6 +249,7 @@ CREATE TABLE public.product_variants (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     version integer DEFAULT 1 NOT NULL,
+    CONSTRAINT product_variants_business_code_format CHECK ((sku ~ '^SKU[0-9]{2,}$'::text)),
     CONSTRAINT product_variants_low_stock_threshold_check CHECK ((low_stock_threshold >= 0)),
     CONSTRAINT product_variants_status_check CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'INACTIVE'::text]))),
     CONSTRAINT product_variants_volume_ml_check CHECK ((volume_ml > (0)::double precision)),
@@ -201,6 +276,8 @@ CREATE TABLE public.products (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     version integer DEFAULT 1 NOT NULL,
+    thumbnail_media_id uuid,
+    CONSTRAINT products_business_code_format CHECK ((code ~ '^SP[0-9]{2,}$'::text)),
     CONSTRAINT products_status_check CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'INACTIVE'::text])))
 );
 
@@ -221,6 +298,61 @@ CREATE VIEW public.api_balances AS
    FROM ((public.product_variants v
      JOIN public.products p ON ((p.id = v.product_id)))
      LEFT JOIN public.inventory_balances b ON ((b.variant_id = v.id)));
+
+
+--
+-- Name: brands; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.brands (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    code text DEFAULT public.halora_code('TH'::text) NOT NULL,
+    name text NOT NULL,
+    description text,
+    status text DEFAULT 'ACTIVE'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    thumbnail_media_id uuid,
+    CONSTRAINT brands_business_code_format CHECK ((code ~ '^TH[0-9]{2,}$'::text)),
+    CONSTRAINT brands_status_check CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'INACTIVE'::text])))
+);
+
+
+--
+-- Name: media_assets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_assets (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    url text NOT NULL,
+    storage_name text NOT NULL,
+    mime_type text NOT NULL,
+    size integer NOT NULL,
+    original_name text NOT NULL,
+    account_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT media_assets_size_check CHECK ((size > 0))
+);
+
+
+--
+-- Name: api_brands; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.api_brands AS
+ SELECT b.id,
+    b.code,
+    b.name,
+    b.description,
+    b.status,
+    b.created_at,
+    b.updated_at,
+    b.version,
+    b.thumbnail_media_id,
+    m.url AS thumbnail_url
+   FROM (public.brands b
+     LEFT JOIN public.media_assets m ON ((m.id = b.thumbnail_media_id)));
 
 
 --
@@ -281,16 +413,6 @@ CREATE VIEW public.api_discounts AS
 
 
 --
--- Name: employee_roles; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.employee_roles (
-    employee_id uuid NOT NULL,
-    role_id uuid NOT NULL
-);
-
-
---
 -- Name: api_employees; Type: VIEW; Schema: public; Owner: -
 --
 
@@ -310,23 +432,6 @@ CREATE VIEW public.api_employees AS
            FROM public.employee_roles er
           WHERE (er.employee_id = e.id)), '{}'::uuid[]) AS role_ids
    FROM public.employees e;
-
-
---
--- Name: media_assets; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.media_assets (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    url text NOT NULL,
-    storage_name text NOT NULL,
-    mime_type text NOT NULL,
-    size integer NOT NULL,
-    original_name text NOT NULL,
-    account_id uuid NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT media_assets_size_check CHECK ((size > 0))
-);
 
 
 --
@@ -367,6 +472,60 @@ CREATE VIEW public.api_images AS
 
 
 --
+-- Name: order_promotion_rules; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.order_promotion_rules (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    promotion_id uuid NOT NULL,
+    min_order_amount public.money_vnd NOT NULL,
+    discount_percent public.discount_percent NOT NULL,
+    max_discount_amount public.money_vnd,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    code text DEFAULT public.halora_code('KMHD'::text) NOT NULL,
+    CONSTRAINT order_promotion_rules_code_check CHECK ((code ~ '^KMHD[0-9]{2,}$'::text))
+);
+
+
+--
+-- Name: promotion_usage; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.promotion_usage (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    promotion_id uuid NOT NULL,
+    product_rule_id uuid,
+    order_rule_id uuid,
+    voucher_id uuid,
+    first_order_id uuid NOT NULL,
+    used_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT promotion_usage_check CHECK ((num_nonnulls(product_rule_id, order_rule_id, voucher_id) = 1))
+);
+
+
+--
+-- Name: api_order_promotion_rules; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.api_order_promotion_rules AS
+ SELECT id,
+    promotion_id,
+    min_order_amount,
+    discount_percent,
+    max_discount_amount,
+    created_at,
+    updated_at,
+    version,
+    code,
+    (EXISTS ( SELECT 1
+           FROM public.promotion_usage u
+          WHERE (u.order_rule_id = r.id))) AS has_usage
+   FROM public.order_promotion_rules r;
+
+
+--
 -- Name: orders; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -397,6 +556,7 @@ CREATE TABLE public.orders (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     version integer DEFAULT 1 NOT NULL,
+    CONSTRAINT orders_business_code_format CHECK ((order_code ~ '^DH[0-9]{2,}$'::text)),
     CONSTRAINT orders_check CHECK (((((product_discount_amount)::numeric + (order_discount_amount)::numeric) + (voucher_discount_amount)::numeric) <= (subtotal_amount)::numeric)),
     CONSTRAINT orders_check1 CHECK (((total_amount)::numeric = (((((subtotal_amount)::numeric - (product_discount_amount)::numeric) - (order_discount_amount)::numeric) - (voucher_discount_amount)::numeric) + (shipping_fee)::numeric))),
     CONSTRAINT orders_payment_method_check CHECK ((payment_method = ANY (ARRAY['COD'::text, 'BANK_TRANSFER'::text]))),
@@ -487,6 +647,78 @@ CREATE VIEW public.api_orders AS
 
 
 --
+-- Name: product_promotion_rules; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.product_promotion_rules (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    promotion_id uuid NOT NULL,
+    product_id uuid NOT NULL,
+    variant_id uuid,
+    discount_percent public.discount_percent NOT NULL,
+    min_quantity integer NOT NULL,
+    max_discount_amount public.money_vnd,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    code text DEFAULT public.halora_code('KMSP'::text) NOT NULL,
+    CONSTRAINT product_promotion_rules_code_check CHECK ((code ~ '^KMSP[0-9]{2,}$'::text)),
+    CONSTRAINT product_promotion_rules_min_quantity_check CHECK ((min_quantity >= 0))
+);
+
+
+--
+-- Name: api_product_promotion_rules; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.api_product_promotion_rules AS
+ SELECT id,
+    promotion_id,
+    product_id,
+    variant_id,
+    discount_percent,
+    min_quantity,
+    max_discount_amount,
+    created_at,
+    updated_at,
+    version,
+    code,
+    (EXISTS ( SELECT 1
+           FROM public.promotion_usage u
+          WHERE (u.product_rule_id = r.id))) AS has_usage
+   FROM public.product_promotion_rules r;
+
+
+--
+-- Name: api_products; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.api_products AS
+ SELECT p.id,
+    p.code,
+    p.name,
+    p.slug,
+    p.category_id,
+    p.brand_id,
+    p.description,
+    p.ingredients,
+    p.benefits,
+    p.is_featured,
+    p.status,
+    p.created_at,
+    p.updated_at,
+    p.version,
+    p.thumbnail_media_id,
+    COALESCE(m.url, ( SELECT i.url
+           FROM public.api_images i
+          WHERE (i.product_id = p.id)
+          ORDER BY i.sort_order, i.id
+         LIMIT 1)) AS thumbnail_url
+   FROM (public.products p
+     LEFT JOIN public.media_assets m ON ((m.id = p.thumbnail_media_id)));
+
+
+--
 -- Name: promotions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -501,6 +733,7 @@ CREATE TABLE public.promotions (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     version integer DEFAULT 1 NOT NULL,
+    CONSTRAINT promotions_business_code_format CHECK ((code ~ '^KM[0-9]{2,}$'::text)),
     CONSTRAINT promotions_check CHECK ((starts_at <= ends_at)),
     CONSTRAINT promotions_status_check CHECK ((status = ANY (ARRAY['DRAFT'::text, 'ACTIVE'::text, 'PAUSED'::text, 'ENDED'::text])))
 );
@@ -522,26 +755,9 @@ CREATE VIEW public.api_promotions AS
     updated_at,
     version,
     (EXISTS ( SELECT 1
-           FROM public.order_discounts d
-          WHERE (d.promotion_id = p.id))) AS has_usage
+           FROM public.promotion_usage u
+          WHERE (u.promotion_id = p.id))) AS has_usage
    FROM public.promotions p;
-
-
---
--- Name: brands; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.brands (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    code text DEFAULT public.halora_code('TH'::text) NOT NULL,
-    name text NOT NULL,
-    description text,
-    status text DEFAULT 'ACTIVE'::text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    version integer DEFAULT 1 NOT NULL,
-    CONSTRAINT brands_status_check CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'INACTIVE'::text])))
-);
 
 
 --
@@ -557,6 +773,7 @@ CREATE TABLE public.categories (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     version integer DEFAULT 1 NOT NULL,
+    CONSTRAINT categories_business_code_format CHECK ((code ~ '^LSP[0-9]{2,}$'::text)),
     CONSTRAINT categories_status_check CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'INACTIVE'::text])))
 );
 
@@ -583,11 +800,13 @@ CREATE VIEW public.api_public_products AS
     b.name AS brand_name,
     p.is_featured,
     p.created_at,
-    ( SELECT i.url
+    COALESCE(( SELECT m.url
+           FROM public.media_assets m
+          WHERE (m.id = p.thumbnail_media_id)), ( SELECT i.url
            FROM public.api_images i
           WHERE (i.product_id = p.id)
           ORDER BY i.sort_order, i.id
-         LIMIT 1) AS thumbnail_url,
+         LIMIT 1)) AS thumbnail_url,
     ( SELECT (min((v.sale_price)::numeric))::numeric(18,0) AS min
            FROM public.product_variants v
           WHERE ((v.product_id = p.id) AND (v.status = 'ACTIVE'::text))) AS price_from
@@ -604,21 +823,6 @@ CREATE VIEW public.api_public_products AS
 CREATE TABLE public.role_permissions (
     role_id uuid NOT NULL,
     permission_id uuid NOT NULL
-);
-
-
---
--- Name: roles; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.roles (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    code text NOT NULL,
-    name text NOT NULL,
-    description text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    version integer DEFAULT 1 NOT NULL
 );
 
 
@@ -724,7 +928,7 @@ CREATE TABLE public.voucher_redemptions (
 CREATE TABLE public.vouchers (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     promotion_id uuid NOT NULL,
-    code text NOT NULL,
+    code text DEFAULT public.halora_code('VC'::text) NOT NULL,
     discount_percent public.discount_percent NOT NULL,
     min_order_amount public.money_vnd NOT NULL,
     max_discount_amount public.money_vnd,
@@ -734,8 +938,9 @@ CREATE TABLE public.vouchers (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     version integer DEFAULT 1 NOT NULL,
-    CONSTRAINT vouchers_max_uses_check CHECK ((max_uses > 0)),
-    CONSTRAINT vouchers_per_customer_limit_check CHECK ((per_customer_limit > 0)),
+    CONSTRAINT vouchers_business_code_format CHECK ((code ~ '^VC[0-9]{2,}$'::text)),
+    CONSTRAINT vouchers_max_uses_check CHECK ((max_uses >= 0)),
+    CONSTRAINT vouchers_per_customer_limit_check CHECK ((per_customer_limit >= 0)),
     CONSTRAINT vouchers_status_check CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'INACTIVE'::text])))
 );
 
@@ -762,7 +967,10 @@ CREATE VIEW public.api_vouchers AS
           WHERE ((r.voucher_id = v.id) AND (r.status = 'USED'::text))) AS used_count,
     ( SELECT (count(*))::integer AS count
            FROM public.voucher_redemptions r
-          WHERE ((r.voucher_id = v.id) AND (r.status = 'HELD'::text))) AS reserved_count
+          WHERE ((r.voucher_id = v.id) AND (r.status = 'HELD'::text))) AS reserved_count,
+    (EXISTS ( SELECT 1
+           FROM public.promotion_usage u
+          WHERE (u.voucher_id = v.id))) AS has_usage
    FROM public.vouchers v;
 
 
@@ -795,6 +1003,18 @@ CREATE TABLE public.auth_sessions (
     expires_at timestamp with time zone NOT NULL,
     revoked_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: business_code_counters; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.business_code_counters (
+    prefix text NOT NULL,
+    last_value bigint NOT NULL,
+    CONSTRAINT business_code_counters_last_value_check CHECK ((last_value >= 0)),
+    CONSTRAINT business_code_counters_prefix_check CHECK ((prefix ~ '^[A-Z]{2,6}$'::text))
 );
 
 
@@ -896,6 +1116,7 @@ CREATE TABLE public.goods_receipts (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     version integer DEFAULT 1 NOT NULL,
+    CONSTRAINT goods_receipts_business_code_format CHECK ((receipt_code ~ '^PN[0-9]{2,}$'::text)),
     CONSTRAINT goods_receipts_status_check CHECK ((status = ANY (ARRAY['DRAFT'::text, 'POSTED'::text, 'CANCELLED'::text])))
 );
 
@@ -952,6 +1173,7 @@ CREATE TABLE public.inventory_adjustments (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     version integer DEFAULT 1 NOT NULL,
+    CONSTRAINT inventory_adjustments_business_code_format CHECK ((adjustment_code ~ '^DC[0-9]{2,}$'::text)),
     CONSTRAINT inventory_adjustments_status_check CHECK ((status = ANY (ARRAY['DRAFT'::text, 'POSTED'::text, 'CANCELLED'::text])))
 );
 
@@ -994,6 +1216,7 @@ CREATE TABLE public.invoices (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     version integer DEFAULT 1 NOT NULL,
+    CONSTRAINT invoices_business_code_format CHECK ((invoice_code ~ '^HD[0-9]{2,}$'::text)),
     CONSTRAINT invoices_status_check CHECK ((status = ANY (ARRAY['DRAFT'::text, 'POSTED'::text, 'CANCELLED'::text])))
 );
 
@@ -1027,22 +1250,6 @@ CREATE TABLE public.order_items (
     CONSTRAINT order_items_check CHECK (((line_subtotal)::numeric = ((quantity)::numeric * (unit_price)::numeric))),
     CONSTRAINT order_items_check1 CHECK (((line_total)::numeric = ((line_subtotal)::numeric - (product_discount_amount)::numeric))),
     CONSTRAINT order_items_quantity_check CHECK (((quantity > 0) AND (quantity <= 1000000)))
-);
-
-
---
--- Name: order_promotion_rules; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.order_promotion_rules (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    promotion_id uuid NOT NULL,
-    min_order_amount public.money_vnd NOT NULL,
-    discount_percent public.discount_percent NOT NULL,
-    max_discount_amount public.money_vnd,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    version integer DEFAULT 1 NOT NULL
 );
 
 
@@ -1120,25 +1327,6 @@ ALTER SEQUENCE public.pgmigrations_id_seq OWNED BY public.pgmigrations.id;
 
 
 --
--- Name: product_promotion_rules; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.product_promotion_rules (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    promotion_id uuid NOT NULL,
-    product_id uuid NOT NULL,
-    variant_id uuid,
-    discount_percent public.discount_percent NOT NULL,
-    min_quantity integer NOT NULL,
-    max_discount_amount public.money_vnd,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    version integer DEFAULT 1 NOT NULL,
-    CONSTRAINT product_promotion_rules_min_quantity_check CHECK ((min_quantity > 0))
-);
-
-
---
 -- Name: stock_movements; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1184,6 +1372,7 @@ CREATE TABLE public.suppliers (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     version integer DEFAULT 1 NOT NULL,
+    CONSTRAINT suppliers_business_code_format CHECK ((code ~ '^NCC[0-9]{2,}$'::text)),
     CONSTRAINT suppliers_status_check CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'INACTIVE'::text])))
 );
 
@@ -1193,6 +1382,14 @@ CREATE TABLE public.suppliers (
 --
 
 ALTER TABLE ONLY public.pgmigrations ALTER COLUMN id SET DEFAULT nextval('public.pgmigrations_id_seq'::regclass);
+
+
+--
+-- Name: accounts accounts_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.accounts
+    ADD CONSTRAINT accounts_code_key UNIQUE (code);
 
 
 --
@@ -1249,6 +1446,14 @@ ALTER TABLE ONLY public.brands
 
 ALTER TABLE ONLY public.brands
     ADD CONSTRAINT brands_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: business_code_counters business_code_counters_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.business_code_counters
+    ADD CONSTRAINT business_code_counters_pkey PRIMARY KEY (prefix);
 
 
 --
@@ -1532,6 +1737,14 @@ ALTER TABLE ONLY public.order_items
 
 
 --
+-- Name: order_promotion_rules order_promotion_rules_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_promotion_rules
+    ADD CONSTRAINT order_promotion_rules_code_key UNIQUE (code);
+
+
+--
 -- Name: order_promotion_rules order_promotion_rules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1620,6 +1833,14 @@ ALTER TABLE ONLY public.product_images
 
 
 --
+-- Name: product_promotion_rules product_promotion_rules_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_promotion_rules
+    ADD CONSTRAINT product_promotion_rules_code_key UNIQUE (code);
+
+
+--
 -- Name: product_promotion_rules product_promotion_rules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1665,6 +1886,22 @@ ALTER TABLE ONLY public.products
 
 ALTER TABLE ONLY public.products
     ADD CONSTRAINT products_slug_key UNIQUE (slug);
+
+
+--
+-- Name: promotion_usage promotion_usage_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.promotion_usage
+    ADD CONSTRAINT promotion_usage_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: promotion_usage promotion_usage_product_rule_id_order_rule_id_voucher_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.promotion_usage
+    ADD CONSTRAINT promotion_usage_product_rule_id_order_rule_id_voucher_id_key UNIQUE NULLS NOT DISTINCT (product_rule_id, order_rule_id, voucher_id);
 
 
 --
@@ -1838,6 +2075,13 @@ CREATE UNIQUE INDEX brands_name_uq ON public.brands USING btree (lower(TRIM(BOTH
 
 
 --
+-- Name: brands_thumbnail_media_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX brands_thumbnail_media_idx ON public.brands USING btree (thumbnail_media_id) WHERE (thumbnail_media_id IS NOT NULL);
+
+
+--
 -- Name: categories_name_uq; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1922,6 +2166,20 @@ CREATE INDEX products_category_idx ON public.products USING btree (category_id);
 
 
 --
+-- Name: products_thumbnail_media_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX products_thumbnail_media_idx ON public.products USING btree (thumbnail_media_id) WHERE (thumbnail_media_id IS NOT NULL);
+
+
+--
+-- Name: promotion_usage_promotion_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX promotion_usage_promotion_idx ON public.promotion_usage USING btree (promotion_id);
+
+
+--
 -- Name: refunds_order_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1947,6 +2205,13 @@ CREATE INDEX voucher_redemptions_usage_idx ON public.voucher_redemptions USING b
 --
 
 CREATE UNIQUE INDEX vouchers_code_uq ON public.vouchers USING btree (lower(TRIM(BOTH FROM code)));
+
+
+--
+-- Name: order_discounts remember_promotion_usage; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER remember_promotion_usage AFTER INSERT ON public.order_discounts FOR EACH ROW EXECUTE FUNCTION public.halora_remember_promotion_usage();
 
 
 --
@@ -2097,6 +2362,118 @@ CREATE TRIGGER touch_version BEFORE UPDATE ON public.vouchers FOR EACH ROW EXECU
 
 
 --
+-- Name: accounts track_business_code; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER track_business_code AFTER INSERT OR UPDATE OF code ON public.accounts FOR EACH ROW EXECUTE FUNCTION public.halora_track_code('code', 'TK');
+
+
+--
+-- Name: brands track_business_code; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER track_business_code AFTER INSERT OR UPDATE OF code ON public.brands FOR EACH ROW EXECUTE FUNCTION public.halora_track_code('code', 'TH');
+
+
+--
+-- Name: categories track_business_code; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER track_business_code AFTER INSERT OR UPDATE OF code ON public.categories FOR EACH ROW EXECUTE FUNCTION public.halora_track_code('code', 'LSP');
+
+
+--
+-- Name: customers track_business_code; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER track_business_code AFTER INSERT OR UPDATE OF code ON public.customers FOR EACH ROW EXECUTE FUNCTION public.halora_track_code('code', 'KH');
+
+
+--
+-- Name: employees track_business_code; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER track_business_code AFTER INSERT OR UPDATE OF code ON public.employees FOR EACH ROW EXECUTE FUNCTION public.halora_track_code('code', 'NV');
+
+
+--
+-- Name: goods_receipts track_business_code; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER track_business_code AFTER INSERT OR UPDATE OF receipt_code ON public.goods_receipts FOR EACH ROW EXECUTE FUNCTION public.halora_track_code('receipt_code', 'PN');
+
+
+--
+-- Name: inventory_adjustments track_business_code; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER track_business_code AFTER INSERT OR UPDATE OF adjustment_code ON public.inventory_adjustments FOR EACH ROW EXECUTE FUNCTION public.halora_track_code('adjustment_code', 'DC');
+
+
+--
+-- Name: invoices track_business_code; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER track_business_code AFTER INSERT OR UPDATE OF invoice_code ON public.invoices FOR EACH ROW EXECUTE FUNCTION public.halora_track_code('invoice_code', 'HD');
+
+
+--
+-- Name: order_promotion_rules track_business_code; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER track_business_code AFTER INSERT OR UPDATE OF code ON public.order_promotion_rules FOR EACH ROW EXECUTE FUNCTION public.halora_track_code('code', 'KMHD');
+
+
+--
+-- Name: orders track_business_code; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER track_business_code AFTER INSERT OR UPDATE OF order_code ON public.orders FOR EACH ROW EXECUTE FUNCTION public.halora_track_code('order_code', 'DH');
+
+
+--
+-- Name: product_promotion_rules track_business_code; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER track_business_code AFTER INSERT OR UPDATE OF code ON public.product_promotion_rules FOR EACH ROW EXECUTE FUNCTION public.halora_track_code('code', 'KMSP');
+
+
+--
+-- Name: product_variants track_business_code; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER track_business_code AFTER INSERT OR UPDATE OF sku ON public.product_variants FOR EACH ROW EXECUTE FUNCTION public.halora_track_code('sku', 'SKU');
+
+
+--
+-- Name: products track_business_code; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER track_business_code AFTER INSERT OR UPDATE OF code ON public.products FOR EACH ROW EXECUTE FUNCTION public.halora_track_code('code', 'SP');
+
+
+--
+-- Name: promotions track_business_code; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER track_business_code AFTER INSERT OR UPDATE OF code ON public.promotions FOR EACH ROW EXECUTE FUNCTION public.halora_track_code('code', 'KM');
+
+
+--
+-- Name: suppliers track_business_code; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER track_business_code AFTER INSERT OR UPDATE OF code ON public.suppliers FOR EACH ROW EXECUTE FUNCTION public.halora_track_code('code', 'NCC');
+
+
+--
+-- Name: vouchers track_business_code; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER track_business_code AFTER INSERT OR UPDATE OF code ON public.vouchers FOR EACH ROW EXECUTE FUNCTION public.halora_track_code('code', 'VC');
+
+
+--
 -- Name: audit_logs audit_logs_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2118,6 +2495,14 @@ ALTER TABLE ONLY public.audit_logs
 
 ALTER TABLE ONLY public.auth_sessions
     ADD CONSTRAINT auth_sessions_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: brands brands_thumbnail_media_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.brands
+    ADD CONSTRAINT brands_thumbnail_media_id_fkey FOREIGN KEY (thumbnail_media_id) REFERENCES public.media_assets(id) ON DELETE RESTRICT;
 
 
 --
@@ -2505,6 +2890,54 @@ ALTER TABLE ONLY public.products
 
 
 --
+-- Name: products products_thumbnail_media_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.products
+    ADD CONSTRAINT products_thumbnail_media_id_fkey FOREIGN KEY (thumbnail_media_id) REFERENCES public.media_assets(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: promotion_usage promotion_usage_first_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.promotion_usage
+    ADD CONSTRAINT promotion_usage_first_order_id_fkey FOREIGN KEY (first_order_id) REFERENCES public.orders(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: promotion_usage promotion_usage_order_rule_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.promotion_usage
+    ADD CONSTRAINT promotion_usage_order_rule_id_fkey FOREIGN KEY (order_rule_id) REFERENCES public.order_promotion_rules(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: promotion_usage promotion_usage_product_rule_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.promotion_usage
+    ADD CONSTRAINT promotion_usage_product_rule_id_fkey FOREIGN KEY (product_rule_id) REFERENCES public.product_promotion_rules(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: promotion_usage promotion_usage_promotion_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.promotion_usage
+    ADD CONSTRAINT promotion_usage_promotion_id_fkey FOREIGN KEY (promotion_id) REFERENCES public.promotions(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: promotion_usage promotion_usage_voucher_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.promotion_usage
+    ADD CONSTRAINT promotion_usage_voucher_id_fkey FOREIGN KEY (voucher_id) REFERENCES public.vouchers(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: refunds refunds_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2612,7 +3045,7 @@ ALTER TABLE ONLY public.vouchers
 --
 
 
--- Dumped from database version 18.6
+-- Dumped from database version 18.6 (Debian 18.6-1.pgdg13+2)
 -- Dumped by pg_dump version 18.6
 
 SET statement_timeout = 0;
@@ -2628,242 +3061,267 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
+-- Data for Name: business_code_counters; Type: TABLE DATA; Schema: public; Owner: -
+--
+
+INSERT INTO public.business_code_counters VALUES ('TK', 0);
+INSERT INTO public.business_code_counters VALUES ('KH', 0);
+INSERT INTO public.business_code_counters VALUES ('NV', 0);
+INSERT INTO public.business_code_counters VALUES ('LSP', 0);
+INSERT INTO public.business_code_counters VALUES ('TH', 0);
+INSERT INTO public.business_code_counters VALUES ('SP', 0);
+INSERT INTO public.business_code_counters VALUES ('SKU', 0);
+INSERT INTO public.business_code_counters VALUES ('NCC', 0);
+INSERT INTO public.business_code_counters VALUES ('KM', 0);
+INSERT INTO public.business_code_counters VALUES ('VC', 0);
+INSERT INTO public.business_code_counters VALUES ('DH', 0);
+INSERT INTO public.business_code_counters VALUES ('HD', 0);
+INSERT INTO public.business_code_counters VALUES ('PN', 0);
+INSERT INTO public.business_code_counters VALUES ('DC', 0);
+INSERT INTO public.business_code_counters VALUES ('KMSP', 0);
+INSERT INTO public.business_code_counters VALUES ('KMHD', 0);
+
+
+--
 -- Data for Name: permissions; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.permissions VALUES ('0d7faf87-4379-4674-9bda-95fc6ee899ae', 'categories.read', 'categories.read', 'Quyền hệ thống Halora: categories.read');
-INSERT INTO public.permissions VALUES ('492ecb0d-7030-4ef6-9869-c3ac25440f04', 'categories.create', 'categories.create', 'Quyền hệ thống Halora: categories.create');
-INSERT INTO public.permissions VALUES ('c2814a16-68af-4f51-bd0c-148c87392e1b', 'categories.update', 'categories.update', 'Quyền hệ thống Halora: categories.update');
-INSERT INTO public.permissions VALUES ('68b803de-d878-4752-9183-cf40ee7f45cf', 'categories.delete', 'categories.delete', 'Quyền hệ thống Halora: categories.delete');
-INSERT INTO public.permissions VALUES ('de0a6321-c0ac-4c8b-8ee7-dd6f72cb3b8d', 'brands.read', 'brands.read', 'Quyền hệ thống Halora: brands.read');
-INSERT INTO public.permissions VALUES ('a32692b3-b353-4bf2-8bdc-ea7febb458c8', 'brands.create', 'brands.create', 'Quyền hệ thống Halora: brands.create');
-INSERT INTO public.permissions VALUES ('529a2e09-6188-4fd2-98a2-8d75d6420c0f', 'brands.update', 'brands.update', 'Quyền hệ thống Halora: brands.update');
-INSERT INTO public.permissions VALUES ('45648970-4ccb-457f-9dd5-ae8b5e00da5f', 'brands.delete', 'brands.delete', 'Quyền hệ thống Halora: brands.delete');
-INSERT INTO public.permissions VALUES ('bebfa059-ff71-4b6c-b61c-daa46bb6c1c4', 'products.read', 'products.read', 'Quyền hệ thống Halora: products.read');
-INSERT INTO public.permissions VALUES ('e16b76eb-6c1b-4d74-81d4-fe42b042e411', 'products.create', 'products.create', 'Quyền hệ thống Halora: products.create');
-INSERT INTO public.permissions VALUES ('cda7d4ee-4d33-4290-a82f-1f5aa4dc31d7', 'products.update', 'products.update', 'Quyền hệ thống Halora: products.update');
-INSERT INTO public.permissions VALUES ('4fe3682c-f825-48c8-9eb1-cb8b614634e1', 'products.delete', 'products.delete', 'Quyền hệ thống Halora: products.delete');
-INSERT INTO public.permissions VALUES ('0d5ce2f6-84b6-4123-8fc9-3d8c2d7c7526', 'customers.read', 'customers.read', 'Quyền hệ thống Halora: customers.read');
-INSERT INTO public.permissions VALUES ('9a8dfe2d-560c-4881-9794-1f0f0c158bd7', 'customers.update', 'customers.update', 'Quyền hệ thống Halora: customers.update');
-INSERT INTO public.permissions VALUES ('cba90ce8-279b-4d68-b640-070a023c107d', 'customers.delete', 'customers.delete', 'Quyền hệ thống Halora: customers.delete');
-INSERT INTO public.permissions VALUES ('8ce59fdc-efdd-44b8-be93-2802c3294a43', 'employees.read', 'employees.read', 'Quyền hệ thống Halora: employees.read');
-INSERT INTO public.permissions VALUES ('589ce4b0-5d61-4b8d-87ab-8d004ec56c23', 'employees.create', 'employees.create', 'Quyền hệ thống Halora: employees.create');
-INSERT INTO public.permissions VALUES ('19b8a1aa-855b-43ab-adb9-49905ad07315', 'employees.update', 'employees.update', 'Quyền hệ thống Halora: employees.update');
-INSERT INTO public.permissions VALUES ('2e2f3dd2-8f49-42ab-aba9-4c354c65d1ff', 'employees.delete', 'employees.delete', 'Quyền hệ thống Halora: employees.delete');
-INSERT INTO public.permissions VALUES ('345c6c1f-85bf-4e8c-8b19-d6a62ef4a2d7', 'employees.createAccount', 'employees.createAccount', 'Quyền hệ thống Halora: employees.createAccount');
-INSERT INTO public.permissions VALUES ('3ba8a250-8d5a-4390-a794-acf0bac6eb96', 'employees.assignRoles', 'employees.assignRoles', 'Quyền hệ thống Halora: employees.assignRoles');
-INSERT INTO public.permissions VALUES ('f0b4aadd-d426-4cab-942d-f80e56f69301', 'accounts.read', 'accounts.read', 'Quyền hệ thống Halora: accounts.read');
-INSERT INTO public.permissions VALUES ('271b9f77-5d08-4a03-9ff3-e8508c412361', 'accounts.update', 'accounts.update', 'Quyền hệ thống Halora: accounts.update');
-INSERT INTO public.permissions VALUES ('2ef49afc-a3d2-480a-a113-6ccd0ceb870d', 'roles.read', 'roles.read', 'Quyền hệ thống Halora: roles.read');
-INSERT INTO public.permissions VALUES ('4871605c-f5c3-4f92-87b0-6bf913a5cd6e', 'roles.update', 'roles.update', 'Quyền hệ thống Halora: roles.update');
-INSERT INTO public.permissions VALUES ('b9d60f07-fe6a-4683-aa51-ea75817aadf2', 'permissions.read', 'permissions.read', 'Quyền hệ thống Halora: permissions.read');
-INSERT INTO public.permissions VALUES ('451f8270-5006-4e5c-baa1-5214d1cf9348', 'suppliers.read', 'suppliers.read', 'Quyền hệ thống Halora: suppliers.read');
-INSERT INTO public.permissions VALUES ('785109ba-fa44-4646-81f9-1af928f4c62f', 'suppliers.create', 'suppliers.create', 'Quyền hệ thống Halora: suppliers.create');
-INSERT INTO public.permissions VALUES ('6928ad77-d7c6-4d40-a293-e4ad3017e206', 'suppliers.update', 'suppliers.update', 'Quyền hệ thống Halora: suppliers.update');
-INSERT INTO public.permissions VALUES ('fce0a247-18c2-4e95-8931-501e6d11fdc1', 'suppliers.delete', 'suppliers.delete', 'Quyền hệ thống Halora: suppliers.delete');
-INSERT INTO public.permissions VALUES ('328de263-cf93-4a87-af23-48f19dc298ed', 'promotions.read', 'promotions.read', 'Quyền hệ thống Halora: promotions.read');
-INSERT INTO public.permissions VALUES ('4459a89f-988c-4128-9334-c4e2aaf0dab5', 'promotions.create', 'promotions.create', 'Quyền hệ thống Halora: promotions.create');
-INSERT INTO public.permissions VALUES ('6e387cc9-f8d3-4420-8938-472aab2099bf', 'promotions.update', 'promotions.update', 'Quyền hệ thống Halora: promotions.update');
-INSERT INTO public.permissions VALUES ('f13208a3-911a-4d18-98d7-55f30acc645e', 'promotions.delete', 'promotions.delete', 'Quyền hệ thống Halora: promotions.delete');
-INSERT INTO public.permissions VALUES ('121c5dbb-1649-4923-ae42-6e3a69d9f11f', 'orders.read', 'orders.read', 'Quyền hệ thống Halora: orders.read');
-INSERT INTO public.permissions VALUES ('2c72d0b8-72c1-4fc0-962f-8fdf66d925f2', 'orders.confirm', 'orders.confirm', 'Quyền hệ thống Halora: orders.confirm');
-INSERT INTO public.permissions VALUES ('edc38b0e-f4bf-4a17-b1f3-5ec8301b5ca6', 'orders.dispatch', 'orders.dispatch', 'Quyền hệ thống Halora: orders.dispatch');
-INSERT INTO public.permissions VALUES ('ee99c5bc-edf7-4df2-9e54-08ad4ef760b7', 'orders.complete', 'orders.complete', 'Quyền hệ thống Halora: orders.complete');
-INSERT INTO public.permissions VALUES ('4ea034fb-d89e-4ca0-bfb9-edac9340b18a', 'orders.cancel', 'orders.cancel', 'Quyền hệ thống Halora: orders.cancel');
-INSERT INTO public.permissions VALUES ('491a4c23-4bb3-479d-9f20-9e84463ece29', 'payments.create', 'payments.create', 'Quyền hệ thống Halora: payments.create');
-INSERT INTO public.permissions VALUES ('ca9fa310-c169-4637-baaa-3e7f8b5a21cf', 'payments.confirm', 'payments.confirm', 'Quyền hệ thống Halora: payments.confirm');
-INSERT INTO public.permissions VALUES ('588d3422-a0d9-48a0-94fa-15e0e5fb6d46', 'payments.fail', 'payments.fail', 'Quyền hệ thống Halora: payments.fail');
-INSERT INTO public.permissions VALUES ('889b72cb-77e8-47ee-a989-46373451732e', 'refunds.confirm', 'refunds.confirm', 'Quyền hệ thống Halora: refunds.confirm');
-INSERT INTO public.permissions VALUES ('98cda9e6-9622-4c27-88ea-d27389d516b3', 'refunds.fail', 'refunds.fail', 'Quyền hệ thống Halora: refunds.fail');
-INSERT INTO public.permissions VALUES ('57e48fab-506d-40ca-a006-2fbb3e333397', 'invoices.read', 'invoices.read', 'Quyền hệ thống Halora: invoices.read');
-INSERT INTO public.permissions VALUES ('f0fbfd14-57ca-49ba-98e0-5104c7d283ec', 'invoices.create', 'invoices.create', 'Quyền hệ thống Halora: invoices.create');
-INSERT INTO public.permissions VALUES ('c9675988-b76f-431e-817f-5ff81e670e2d', 'invoices.update', 'invoices.update', 'Quyền hệ thống Halora: invoices.update');
-INSERT INTO public.permissions VALUES ('fa822de7-4a21-4235-8b92-d842437c7584', 'invoices.delete', 'invoices.delete', 'Quyền hệ thống Halora: invoices.delete');
-INSERT INTO public.permissions VALUES ('b4ca6276-2f9b-4edd-8ded-46c0ded9ea80', 'invoices.post', 'invoices.post', 'Quyền hệ thống Halora: invoices.post');
-INSERT INTO public.permissions VALUES ('ccf6010d-34d8-49ea-af5c-6f252bb2849a', 'invoices.export', 'invoices.export', 'Quyền hệ thống Halora: invoices.export');
-INSERT INTO public.permissions VALUES ('306d654a-3a75-410d-9b0c-8c03bb00c168', 'goodsReceipts.read', 'goodsReceipts.read', 'Quyền hệ thống Halora: goodsReceipts.read');
-INSERT INTO public.permissions VALUES ('b4faa72d-f3d0-41d6-aa62-d310f39df007', 'goodsReceipts.create', 'goodsReceipts.create', 'Quyền hệ thống Halora: goodsReceipts.create');
-INSERT INTO public.permissions VALUES ('7edbb4c5-d508-4eb2-96d6-5ac039d5af89', 'goodsReceipts.update', 'goodsReceipts.update', 'Quyền hệ thống Halora: goodsReceipts.update');
-INSERT INTO public.permissions VALUES ('057bd8a1-9433-404b-95d3-4a4424d8e106', 'goodsReceipts.delete', 'goodsReceipts.delete', 'Quyền hệ thống Halora: goodsReceipts.delete');
-INSERT INTO public.permissions VALUES ('b71675de-7225-4324-85d3-088eb9c676b1', 'goodsReceipts.post', 'goodsReceipts.post', 'Quyền hệ thống Halora: goodsReceipts.post');
-INSERT INTO public.permissions VALUES ('6145c6d0-a93b-4dfd-a200-3c64301fdbde', 'goodsReceipts.export', 'goodsReceipts.export', 'Quyền hệ thống Halora: goodsReceipts.export');
-INSERT INTO public.permissions VALUES ('2927f7ae-c732-4c1c-afd5-c68d77714b00', 'inventory.read', 'inventory.read', 'Quyền hệ thống Halora: inventory.read');
-INSERT INTO public.permissions VALUES ('1a297b58-6706-4693-ad55-d5169927a2ae', 'inventoryAdjustments.read', 'inventoryAdjustments.read', 'Quyền hệ thống Halora: inventoryAdjustments.read');
-INSERT INTO public.permissions VALUES ('65278eeb-3d89-4133-83a2-409c12d3bd27', 'inventoryAdjustments.create', 'inventoryAdjustments.create', 'Quyền hệ thống Halora: inventoryAdjustments.create');
-INSERT INTO public.permissions VALUES ('e8deca04-bcfd-4355-b505-b0328e7c89d8', 'inventoryAdjustments.update', 'inventoryAdjustments.update', 'Quyền hệ thống Halora: inventoryAdjustments.update');
-INSERT INTO public.permissions VALUES ('1624d272-43c1-49b6-beb0-a1d1e9b1f522', 'inventoryAdjustments.delete', 'inventoryAdjustments.delete', 'Quyền hệ thống Halora: inventoryAdjustments.delete');
-INSERT INTO public.permissions VALUES ('7b29893c-214a-4f66-8ea7-769b03215bf3', 'inventoryAdjustments.post', 'inventoryAdjustments.post', 'Quyền hệ thống Halora: inventoryAdjustments.post');
-INSERT INTO public.permissions VALUES ('c3686743-5e09-48e4-b52c-713d8d3d3edf', 'reports.read', 'reports.read', 'Quyền hệ thống Halora: reports.read');
-INSERT INTO public.permissions VALUES ('72f90f07-ebfa-4e63-b78b-dc58561edc57', 'reports.export', 'reports.export', 'Quyền hệ thống Halora: reports.export');
-INSERT INTO public.permissions VALUES ('1b762558-6c52-408f-afb6-52917121a16b', 'media.create', 'media.create', 'Quyền hệ thống Halora: media.create');
+INSERT INTO public.permissions VALUES ('010d6ee8-05f6-47aa-8a45-1174ec47baa7', 'categories.read', 'categories.read', 'Quyền hệ thống Halora: categories.read');
+INSERT INTO public.permissions VALUES ('1d6cd36e-631b-41df-97a1-723cb2ddc85f', 'categories.create', 'categories.create', 'Quyền hệ thống Halora: categories.create');
+INSERT INTO public.permissions VALUES ('a5b308f3-4503-4d45-a465-71e307500ca6', 'categories.update', 'categories.update', 'Quyền hệ thống Halora: categories.update');
+INSERT INTO public.permissions VALUES ('0736f4cf-0961-481e-be7b-db8f3acbd77c', 'categories.delete', 'categories.delete', 'Quyền hệ thống Halora: categories.delete');
+INSERT INTO public.permissions VALUES ('c4f01264-2b3c-4704-9c8d-bbbf869f7e05', 'brands.read', 'brands.read', 'Quyền hệ thống Halora: brands.read');
+INSERT INTO public.permissions VALUES ('cea779a3-ebb5-456d-ae48-ad8e00da8b7e', 'brands.create', 'brands.create', 'Quyền hệ thống Halora: brands.create');
+INSERT INTO public.permissions VALUES ('5fa14288-0c51-4637-85ca-c294d3d88f4c', 'brands.update', 'brands.update', 'Quyền hệ thống Halora: brands.update');
+INSERT INTO public.permissions VALUES ('cfcf3ba9-c51d-4388-9621-db6ac2041d81', 'brands.delete', 'brands.delete', 'Quyền hệ thống Halora: brands.delete');
+INSERT INTO public.permissions VALUES ('a91386c2-4cef-4c7b-a2fe-5bd0c89daf2d', 'products.read', 'products.read', 'Quyền hệ thống Halora: products.read');
+INSERT INTO public.permissions VALUES ('33c2903c-98fc-4703-ae35-f95682421994', 'products.create', 'products.create', 'Quyền hệ thống Halora: products.create');
+INSERT INTO public.permissions VALUES ('f6b8f68c-6aca-4850-beb1-84dce5e42cd8', 'products.update', 'products.update', 'Quyền hệ thống Halora: products.update');
+INSERT INTO public.permissions VALUES ('ce258a47-1ea1-46aa-8900-5ca1d2ed4929', 'products.delete', 'products.delete', 'Quyền hệ thống Halora: products.delete');
+INSERT INTO public.permissions VALUES ('3c7b4436-7564-4878-b182-644f910fc1ad', 'customers.read', 'customers.read', 'Quyền hệ thống Halora: customers.read');
+INSERT INTO public.permissions VALUES ('781fe2db-edca-4d75-8dc4-e2b4220a1b9f', 'customers.update', 'customers.update', 'Quyền hệ thống Halora: customers.update');
+INSERT INTO public.permissions VALUES ('1db4dbe9-aa23-45e3-9828-8b3ff0963d48', 'customers.delete', 'customers.delete', 'Quyền hệ thống Halora: customers.delete');
+INSERT INTO public.permissions VALUES ('0fc06bca-eb47-4f8b-8535-d0a8ad64dca9', 'employees.read', 'employees.read', 'Quyền hệ thống Halora: employees.read');
+INSERT INTO public.permissions VALUES ('670d136d-d80a-457a-bfdc-c200dd079544', 'employees.create', 'employees.create', 'Quyền hệ thống Halora: employees.create');
+INSERT INTO public.permissions VALUES ('fe550689-0808-4227-a631-4ee8bf80a6b4', 'employees.update', 'employees.update', 'Quyền hệ thống Halora: employees.update');
+INSERT INTO public.permissions VALUES ('e0e4edd4-9718-4c7a-bf7f-cbeac25de426', 'employees.delete', 'employees.delete', 'Quyền hệ thống Halora: employees.delete');
+INSERT INTO public.permissions VALUES ('ac5af378-4bc9-4ab1-a359-de881bb1b3f5', 'employees.createAccount', 'employees.createAccount', 'Quyền hệ thống Halora: employees.createAccount');
+INSERT INTO public.permissions VALUES ('0c224221-2661-4fff-abe1-b71d501ae3c5', 'employees.assignRoles', 'employees.assignRoles', 'Quyền hệ thống Halora: employees.assignRoles');
+INSERT INTO public.permissions VALUES ('58a5654d-d279-4947-9c83-76b7bcd6eb7a', 'accounts.read', 'accounts.read', 'Quyền hệ thống Halora: accounts.read');
+INSERT INTO public.permissions VALUES ('81b8de81-131c-4afa-bd6b-0cf04ce52ebc', 'accounts.update', 'accounts.update', 'Quyền hệ thống Halora: accounts.update');
+INSERT INTO public.permissions VALUES ('8673d1c0-cb59-4c39-a5eb-6f598176b85e', 'roles.read', 'roles.read', 'Quyền hệ thống Halora: roles.read');
+INSERT INTO public.permissions VALUES ('e9f7f96e-1aae-475f-8e2e-d570959074a6', 'permissions.read', 'permissions.read', 'Quyền hệ thống Halora: permissions.read');
+INSERT INTO public.permissions VALUES ('76dafc2a-8b7a-4f20-ab55-3e6fe540d789', 'suppliers.read', 'suppliers.read', 'Quyền hệ thống Halora: suppliers.read');
+INSERT INTO public.permissions VALUES ('ca717cf5-b561-4c49-a002-8cf0496cccbd', 'suppliers.create', 'suppliers.create', 'Quyền hệ thống Halora: suppliers.create');
+INSERT INTO public.permissions VALUES ('9a29d277-20ff-4799-adf9-693a0183b585', 'suppliers.update', 'suppliers.update', 'Quyền hệ thống Halora: suppliers.update');
+INSERT INTO public.permissions VALUES ('06f25814-99a1-46aa-8a6b-afb68b558144', 'suppliers.delete', 'suppliers.delete', 'Quyền hệ thống Halora: suppliers.delete');
+INSERT INTO public.permissions VALUES ('e16d68b6-d45e-43e8-9fb8-c0e935521303', 'promotions.read', 'promotions.read', 'Quyền hệ thống Halora: promotions.read');
+INSERT INTO public.permissions VALUES ('aa28a62f-803b-4574-b2b8-199327550322', 'promotions.create', 'promotions.create', 'Quyền hệ thống Halora: promotions.create');
+INSERT INTO public.permissions VALUES ('eb319fd1-1cad-4a92-a964-48f3ab7be604', 'promotions.update', 'promotions.update', 'Quyền hệ thống Halora: promotions.update');
+INSERT INTO public.permissions VALUES ('763b99b7-1209-4e04-873b-b87ad416a63b', 'promotions.delete', 'promotions.delete', 'Quyền hệ thống Halora: promotions.delete');
+INSERT INTO public.permissions VALUES ('8e1f4f9a-52b8-435c-8026-97b49bec4d83', 'orders.read', 'orders.read', 'Quyền hệ thống Halora: orders.read');
+INSERT INTO public.permissions VALUES ('9ceb8190-ca39-4c51-8d2f-8a9e93136edd', 'orders.confirm', 'orders.confirm', 'Quyền hệ thống Halora: orders.confirm');
+INSERT INTO public.permissions VALUES ('fbb2d0e0-8fb6-4186-8a8e-20c5c21c05cf', 'orders.dispatch', 'orders.dispatch', 'Quyền hệ thống Halora: orders.dispatch');
+INSERT INTO public.permissions VALUES ('9a681d91-3dc2-4075-a811-593fcf199e75', 'orders.complete', 'orders.complete', 'Quyền hệ thống Halora: orders.complete');
+INSERT INTO public.permissions VALUES ('30658153-f26a-4422-bca6-c4f63be29d0d', 'orders.cancel', 'orders.cancel', 'Quyền hệ thống Halora: orders.cancel');
+INSERT INTO public.permissions VALUES ('df5677df-5a41-4f3a-9afc-f3fdb35c71a9', 'payments.create', 'payments.create', 'Quyền hệ thống Halora: payments.create');
+INSERT INTO public.permissions VALUES ('afe57c11-2f54-4e1a-b19a-be5148afd535', 'payments.confirm', 'payments.confirm', 'Quyền hệ thống Halora: payments.confirm');
+INSERT INTO public.permissions VALUES ('87618a40-46b7-4bd9-b7da-b7362a2a093a', 'payments.fail', 'payments.fail', 'Quyền hệ thống Halora: payments.fail');
+INSERT INTO public.permissions VALUES ('58140960-b970-45a4-b64d-408f54702511', 'refunds.confirm', 'refunds.confirm', 'Quyền hệ thống Halora: refunds.confirm');
+INSERT INTO public.permissions VALUES ('42147923-1608-4b91-9cc4-9b24af5c482d', 'refunds.fail', 'refunds.fail', 'Quyền hệ thống Halora: refunds.fail');
+INSERT INTO public.permissions VALUES ('7a7f9236-ac1e-44ab-bfcf-870a08a1e644', 'invoices.read', 'invoices.read', 'Quyền hệ thống Halora: invoices.read');
+INSERT INTO public.permissions VALUES ('57664f4a-d7a4-448d-ba51-d1750ac5287b', 'invoices.create', 'invoices.create', 'Quyền hệ thống Halora: invoices.create');
+INSERT INTO public.permissions VALUES ('005331de-421a-4941-af33-872c9ec5b1fb', 'invoices.update', 'invoices.update', 'Quyền hệ thống Halora: invoices.update');
+INSERT INTO public.permissions VALUES ('d69f2832-4ffe-4378-a31a-a702f7b9240a', 'invoices.delete', 'invoices.delete', 'Quyền hệ thống Halora: invoices.delete');
+INSERT INTO public.permissions VALUES ('a729df13-b132-4904-a1c1-a05ec8049e96', 'invoices.post', 'invoices.post', 'Quyền hệ thống Halora: invoices.post');
+INSERT INTO public.permissions VALUES ('3001d129-2dd0-4deb-a6d8-35b8f6f62c28', 'invoices.export', 'invoices.export', 'Quyền hệ thống Halora: invoices.export');
+INSERT INTO public.permissions VALUES ('22c6dfd1-fdd8-44c0-8a76-acc5954f0d47', 'goodsReceipts.read', 'goodsReceipts.read', 'Quyền hệ thống Halora: goodsReceipts.read');
+INSERT INTO public.permissions VALUES ('c4255d6d-ac40-4acc-868f-3aa6ca4c6d2b', 'goodsReceipts.create', 'goodsReceipts.create', 'Quyền hệ thống Halora: goodsReceipts.create');
+INSERT INTO public.permissions VALUES ('48dc6ee0-ba05-43a2-9527-6aa6cae7b2d1', 'goodsReceipts.update', 'goodsReceipts.update', 'Quyền hệ thống Halora: goodsReceipts.update');
+INSERT INTO public.permissions VALUES ('d72b7241-0c76-45e3-b76f-a4ac26055cc9', 'goodsReceipts.delete', 'goodsReceipts.delete', 'Quyền hệ thống Halora: goodsReceipts.delete');
+INSERT INTO public.permissions VALUES ('e5632431-3a9f-4c50-96b0-dae617a0e13a', 'goodsReceipts.post', 'goodsReceipts.post', 'Quyền hệ thống Halora: goodsReceipts.post');
+INSERT INTO public.permissions VALUES ('cba3777e-10ad-4428-b073-d7ef006684cd', 'goodsReceipts.export', 'goodsReceipts.export', 'Quyền hệ thống Halora: goodsReceipts.export');
+INSERT INTO public.permissions VALUES ('b52b064f-7f7d-40b1-bd61-b01cd0424343', 'inventory.read', 'inventory.read', 'Quyền hệ thống Halora: inventory.read');
+INSERT INTO public.permissions VALUES ('0916f10a-7b07-40eb-9d0d-4a81a485135b', 'inventoryAdjustments.read', 'inventoryAdjustments.read', 'Quyền hệ thống Halora: inventoryAdjustments.read');
+INSERT INTO public.permissions VALUES ('0dca1b8f-d4bc-411b-8b44-04e0cd5f79be', 'inventoryAdjustments.create', 'inventoryAdjustments.create', 'Quyền hệ thống Halora: inventoryAdjustments.create');
+INSERT INTO public.permissions VALUES ('a268bbfd-e250-417d-9a68-7fcdcace10a0', 'inventoryAdjustments.update', 'inventoryAdjustments.update', 'Quyền hệ thống Halora: inventoryAdjustments.update');
+INSERT INTO public.permissions VALUES ('ef4f549f-19da-44a3-9efe-cf26e87538fc', 'inventoryAdjustments.delete', 'inventoryAdjustments.delete', 'Quyền hệ thống Halora: inventoryAdjustments.delete');
+INSERT INTO public.permissions VALUES ('f88c55a0-c4de-4870-a6df-d34bfe5edc54', 'inventoryAdjustments.post', 'inventoryAdjustments.post', 'Quyền hệ thống Halora: inventoryAdjustments.post');
+INSERT INTO public.permissions VALUES ('1970b0d9-cf4d-4dad-b92d-fe55eb8d518a', 'reports.read', 'reports.read', 'Quyền hệ thống Halora: reports.read');
+INSERT INTO public.permissions VALUES ('76b82b3d-aced-4a5e-8b6d-e3cce292331d', 'reports.export', 'reports.export', 'Quyền hệ thống Halora: reports.export');
+INSERT INTO public.permissions VALUES ('32865a97-5d72-4552-871b-d5cb1755c4db', 'media.create', 'media.create', 'Quyền hệ thống Halora: media.create');
 
 
 --
 -- Data for Name: pgmigrations; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.pgmigrations VALUES (1, '001_initial', '2026-10-15 22:36:37.821941');
-INSERT INTO public.pgmigrations VALUES (2, '002_access_control', '2026-10-15 22:36:37.821941');
+INSERT INTO public.pgmigrations VALUES (1, '001_initial', '2026-10-17 03:50:04.921494');
+INSERT INTO public.pgmigrations VALUES (2, '002_access_control', '2026-10-17 03:50:04.921494');
+INSERT INTO public.pgmigrations VALUES (3, '003_business_codes', '2026-10-17 03:50:04.921494');
+INSERT INTO public.pgmigrations VALUES (4, '004_fixed_role_permissions', '2026-10-17 03:50:04.921494');
+INSERT INTO public.pgmigrations VALUES (5, '005_clean_display_labels', '2026-10-17 03:50:04.921494');
+INSERT INTO public.pgmigrations VALUES (6, '006_catalog_thumbnails', '2026-10-17 03:50:04.921494');
+INSERT INTO public.pgmigrations VALUES (7, '007_promotion_management', '2026-10-17 03:50:04.921494');
 
 
 --
 -- Data for Name: roles; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.roles VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', 'ADMIN', 'Quản trị viên', 'Quản trị toàn bộ hệ thống', '2026-10-15 22:36:37.821941+07', '2026-10-15 22:36:37.821941+07', 1);
-INSERT INTO public.roles VALUES ('83de7360-b95a-49fb-a8ae-d6de547e771e', 'SALES', 'Bán hàng', 'Quản lý khách hàng và xử lý đơn hàng', '2026-10-15 22:36:37.821941+07', '2026-10-15 22:36:37.821941+07', 1);
-INSERT INTO public.roles VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', 'WAREHOUSE', 'Kho', 'Quản lý sản phẩm, cung ứng và kho', '2026-10-15 22:36:37.821941+07', '2026-10-15 22:36:37.821941+07', 1);
-INSERT INTO public.roles VALUES ('b75c2760-0c76-46c9-99de-5595e43caadb', 'ACCOUNTANT', 'Kế toán', 'Đối soát thanh toán, hóa đơn và báo cáo', '2026-10-15 22:36:37.821941+07', '2026-10-15 22:36:37.821941+07', 1);
-INSERT INTO public.roles VALUES ('5a0401e9-a291-46a9-8833-855982098c2e', 'CUSTOMER', 'Khách hàng', 'Truy cập dữ liệu cá nhân qua /me', '2026-10-15 22:36:37.821941+07', '2026-10-15 22:36:37.821941+07', 1);
+INSERT INTO public.roles VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'ADMIN', 'Quản trị viên', 'Quản trị toàn bộ hệ thống', '2026-10-17 03:50:04.921494+00', '2026-10-17 03:50:04.921494+00', 1);
+INSERT INTO public.roles VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', 'SALES', 'Bán hàng', 'Quản lý khách hàng và xử lý đơn hàng', '2026-10-17 03:50:04.921494+00', '2026-10-17 03:50:04.921494+00', 1);
+INSERT INTO public.roles VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'WAREHOUSE', 'Kho', 'Quản lý sản phẩm, cung ứng và kho', '2026-10-17 03:50:04.921494+00', '2026-10-17 03:50:04.921494+00', 1);
+INSERT INTO public.roles VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', 'ACCOUNTANT', 'Kế toán', 'Đối soát thanh toán, hóa đơn và báo cáo', '2026-10-17 03:50:04.921494+00', '2026-10-17 03:50:04.921494+00', 1);
+INSERT INTO public.roles VALUES ('f6dcd010-9eef-4055-9057-a47bced50d03', 'CUSTOMER', 'Khách hàng', 'Truy cập dữ liệu cá nhân qua /me', '2026-10-17 03:50:04.921494+00', '2026-10-17 03:50:04.921494+00', 1);
 
 
 --
 -- Data for Name: role_permissions; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '0d7faf87-4379-4674-9bda-95fc6ee899ae');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '492ecb0d-7030-4ef6-9869-c3ac25440f04');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', 'c2814a16-68af-4f51-bd0c-148c87392e1b');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '68b803de-d878-4752-9183-cf40ee7f45cf');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', 'de0a6321-c0ac-4c8b-8ee7-dd6f72cb3b8d');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', 'a32692b3-b353-4bf2-8bdc-ea7febb458c8');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '529a2e09-6188-4fd2-98a2-8d75d6420c0f');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '45648970-4ccb-457f-9dd5-ae8b5e00da5f');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', 'bebfa059-ff71-4b6c-b61c-daa46bb6c1c4');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', 'e16b76eb-6c1b-4d74-81d4-fe42b042e411');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', 'cda7d4ee-4d33-4290-a82f-1f5aa4dc31d7');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '4fe3682c-f825-48c8-9eb1-cb8b614634e1');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '0d5ce2f6-84b6-4123-8fc9-3d8c2d7c7526');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '9a8dfe2d-560c-4881-9794-1f0f0c158bd7');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', 'cba90ce8-279b-4d68-b640-070a023c107d');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '8ce59fdc-efdd-44b8-be93-2802c3294a43');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '589ce4b0-5d61-4b8d-87ab-8d004ec56c23');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '19b8a1aa-855b-43ab-adb9-49905ad07315');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '2e2f3dd2-8f49-42ab-aba9-4c354c65d1ff');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '345c6c1f-85bf-4e8c-8b19-d6a62ef4a2d7');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '3ba8a250-8d5a-4390-a794-acf0bac6eb96');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', 'f0b4aadd-d426-4cab-942d-f80e56f69301');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '271b9f77-5d08-4a03-9ff3-e8508c412361');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '2ef49afc-a3d2-480a-a113-6ccd0ceb870d');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '4871605c-f5c3-4f92-87b0-6bf913a5cd6e');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', 'b9d60f07-fe6a-4683-aa51-ea75817aadf2');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '451f8270-5006-4e5c-baa1-5214d1cf9348');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '785109ba-fa44-4646-81f9-1af928f4c62f');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '6928ad77-d7c6-4d40-a293-e4ad3017e206');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', 'fce0a247-18c2-4e95-8931-501e6d11fdc1');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '328de263-cf93-4a87-af23-48f19dc298ed');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '4459a89f-988c-4128-9334-c4e2aaf0dab5');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '6e387cc9-f8d3-4420-8938-472aab2099bf');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', 'f13208a3-911a-4d18-98d7-55f30acc645e');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '121c5dbb-1649-4923-ae42-6e3a69d9f11f');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '2c72d0b8-72c1-4fc0-962f-8fdf66d925f2');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', 'edc38b0e-f4bf-4a17-b1f3-5ec8301b5ca6');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', 'ee99c5bc-edf7-4df2-9e54-08ad4ef760b7');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '4ea034fb-d89e-4ca0-bfb9-edac9340b18a');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '491a4c23-4bb3-479d-9f20-9e84463ece29');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', 'ca9fa310-c169-4637-baaa-3e7f8b5a21cf');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '588d3422-a0d9-48a0-94fa-15e0e5fb6d46');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '889b72cb-77e8-47ee-a989-46373451732e');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '98cda9e6-9622-4c27-88ea-d27389d516b3');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '57e48fab-506d-40ca-a006-2fbb3e333397');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', 'f0fbfd14-57ca-49ba-98e0-5104c7d283ec');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', 'c9675988-b76f-431e-817f-5ff81e670e2d');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', 'fa822de7-4a21-4235-8b92-d842437c7584');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', 'b4ca6276-2f9b-4edd-8ded-46c0ded9ea80');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', 'ccf6010d-34d8-49ea-af5c-6f252bb2849a');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '306d654a-3a75-410d-9b0c-8c03bb00c168');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', 'b4faa72d-f3d0-41d6-aa62-d310f39df007');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '7edbb4c5-d508-4eb2-96d6-5ac039d5af89');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '057bd8a1-9433-404b-95d3-4a4424d8e106');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', 'b71675de-7225-4324-85d3-088eb9c676b1');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '6145c6d0-a93b-4dfd-a200-3c64301fdbde');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '2927f7ae-c732-4c1c-afd5-c68d77714b00');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '1a297b58-6706-4693-ad55-d5169927a2ae');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '65278eeb-3d89-4133-83a2-409c12d3bd27');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', 'e8deca04-bcfd-4355-b505-b0328e7c89d8');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '1624d272-43c1-49b6-beb0-a1d1e9b1f522');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '7b29893c-214a-4f66-8ea7-769b03215bf3');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', 'c3686743-5e09-48e4-b52c-713d8d3d3edf');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '72f90f07-ebfa-4e63-b78b-dc58561edc57');
-INSERT INTO public.role_permissions VALUES ('005c46aa-f9d1-400f-906d-a4d40ee8c63f', '1b762558-6c52-408f-afb6-52917121a16b');
-INSERT INTO public.role_permissions VALUES ('83de7360-b95a-49fb-a8ae-d6de547e771e', '0d7faf87-4379-4674-9bda-95fc6ee899ae');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', '0d7faf87-4379-4674-9bda-95fc6ee899ae');
-INSERT INTO public.role_permissions VALUES ('b75c2760-0c76-46c9-99de-5595e43caadb', '0d7faf87-4379-4674-9bda-95fc6ee899ae');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', '492ecb0d-7030-4ef6-9869-c3ac25440f04');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', 'c2814a16-68af-4f51-bd0c-148c87392e1b');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', '68b803de-d878-4752-9183-cf40ee7f45cf');
-INSERT INTO public.role_permissions VALUES ('83de7360-b95a-49fb-a8ae-d6de547e771e', 'de0a6321-c0ac-4c8b-8ee7-dd6f72cb3b8d');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', 'de0a6321-c0ac-4c8b-8ee7-dd6f72cb3b8d');
-INSERT INTO public.role_permissions VALUES ('b75c2760-0c76-46c9-99de-5595e43caadb', 'de0a6321-c0ac-4c8b-8ee7-dd6f72cb3b8d');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', 'a32692b3-b353-4bf2-8bdc-ea7febb458c8');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', '529a2e09-6188-4fd2-98a2-8d75d6420c0f');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', '45648970-4ccb-457f-9dd5-ae8b5e00da5f');
-INSERT INTO public.role_permissions VALUES ('83de7360-b95a-49fb-a8ae-d6de547e771e', 'bebfa059-ff71-4b6c-b61c-daa46bb6c1c4');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', 'bebfa059-ff71-4b6c-b61c-daa46bb6c1c4');
-INSERT INTO public.role_permissions VALUES ('b75c2760-0c76-46c9-99de-5595e43caadb', 'bebfa059-ff71-4b6c-b61c-daa46bb6c1c4');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', 'e16b76eb-6c1b-4d74-81d4-fe42b042e411');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', 'cda7d4ee-4d33-4290-a82f-1f5aa4dc31d7');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', '4fe3682c-f825-48c8-9eb1-cb8b614634e1');
-INSERT INTO public.role_permissions VALUES ('83de7360-b95a-49fb-a8ae-d6de547e771e', '0d5ce2f6-84b6-4123-8fc9-3d8c2d7c7526');
-INSERT INTO public.role_permissions VALUES ('b75c2760-0c76-46c9-99de-5595e43caadb', '0d5ce2f6-84b6-4123-8fc9-3d8c2d7c7526');
-INSERT INTO public.role_permissions VALUES ('83de7360-b95a-49fb-a8ae-d6de547e771e', '9a8dfe2d-560c-4881-9794-1f0f0c158bd7');
-INSERT INTO public.role_permissions VALUES ('83de7360-b95a-49fb-a8ae-d6de547e771e', 'cba90ce8-279b-4d68-b640-070a023c107d');
-INSERT INTO public.role_permissions VALUES ('b75c2760-0c76-46c9-99de-5595e43caadb', '8ce59fdc-efdd-44b8-be93-2802c3294a43');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', '451f8270-5006-4e5c-baa1-5214d1cf9348');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', '785109ba-fa44-4646-81f9-1af928f4c62f');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', '6928ad77-d7c6-4d40-a293-e4ad3017e206');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', 'fce0a247-18c2-4e95-8931-501e6d11fdc1');
-INSERT INTO public.role_permissions VALUES ('83de7360-b95a-49fb-a8ae-d6de547e771e', '121c5dbb-1649-4923-ae42-6e3a69d9f11f');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', '121c5dbb-1649-4923-ae42-6e3a69d9f11f');
-INSERT INTO public.role_permissions VALUES ('b75c2760-0c76-46c9-99de-5595e43caadb', '121c5dbb-1649-4923-ae42-6e3a69d9f11f');
-INSERT INTO public.role_permissions VALUES ('83de7360-b95a-49fb-a8ae-d6de547e771e', '2c72d0b8-72c1-4fc0-962f-8fdf66d925f2');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', '2c72d0b8-72c1-4fc0-962f-8fdf66d925f2');
-INSERT INTO public.role_permissions VALUES ('83de7360-b95a-49fb-a8ae-d6de547e771e', 'edc38b0e-f4bf-4a17-b1f3-5ec8301b5ca6');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', 'edc38b0e-f4bf-4a17-b1f3-5ec8301b5ca6');
-INSERT INTO public.role_permissions VALUES ('83de7360-b95a-49fb-a8ae-d6de547e771e', 'ee99c5bc-edf7-4df2-9e54-08ad4ef760b7');
-INSERT INTO public.role_permissions VALUES ('83de7360-b95a-49fb-a8ae-d6de547e771e', '4ea034fb-d89e-4ca0-bfb9-edac9340b18a');
-INSERT INTO public.role_permissions VALUES ('83de7360-b95a-49fb-a8ae-d6de547e771e', '491a4c23-4bb3-479d-9f20-9e84463ece29');
-INSERT INTO public.role_permissions VALUES ('b75c2760-0c76-46c9-99de-5595e43caadb', '491a4c23-4bb3-479d-9f20-9e84463ece29');
-INSERT INTO public.role_permissions VALUES ('b75c2760-0c76-46c9-99de-5595e43caadb', 'ca9fa310-c169-4637-baaa-3e7f8b5a21cf');
-INSERT INTO public.role_permissions VALUES ('b75c2760-0c76-46c9-99de-5595e43caadb', '588d3422-a0d9-48a0-94fa-15e0e5fb6d46');
-INSERT INTO public.role_permissions VALUES ('b75c2760-0c76-46c9-99de-5595e43caadb', '889b72cb-77e8-47ee-a989-46373451732e');
-INSERT INTO public.role_permissions VALUES ('b75c2760-0c76-46c9-99de-5595e43caadb', '98cda9e6-9622-4c27-88ea-d27389d516b3');
-INSERT INTO public.role_permissions VALUES ('83de7360-b95a-49fb-a8ae-d6de547e771e', '57e48fab-506d-40ca-a006-2fbb3e333397');
-INSERT INTO public.role_permissions VALUES ('b75c2760-0c76-46c9-99de-5595e43caadb', '57e48fab-506d-40ca-a006-2fbb3e333397');
-INSERT INTO public.role_permissions VALUES ('83de7360-b95a-49fb-a8ae-d6de547e771e', 'f0fbfd14-57ca-49ba-98e0-5104c7d283ec');
-INSERT INTO public.role_permissions VALUES ('b75c2760-0c76-46c9-99de-5595e43caadb', 'f0fbfd14-57ca-49ba-98e0-5104c7d283ec');
-INSERT INTO public.role_permissions VALUES ('83de7360-b95a-49fb-a8ae-d6de547e771e', 'c9675988-b76f-431e-817f-5ff81e670e2d');
-INSERT INTO public.role_permissions VALUES ('b75c2760-0c76-46c9-99de-5595e43caadb', 'c9675988-b76f-431e-817f-5ff81e670e2d');
-INSERT INTO public.role_permissions VALUES ('b75c2760-0c76-46c9-99de-5595e43caadb', 'fa822de7-4a21-4235-8b92-d842437c7584');
-INSERT INTO public.role_permissions VALUES ('83de7360-b95a-49fb-a8ae-d6de547e771e', 'b4ca6276-2f9b-4edd-8ded-46c0ded9ea80');
-INSERT INTO public.role_permissions VALUES ('b75c2760-0c76-46c9-99de-5595e43caadb', 'b4ca6276-2f9b-4edd-8ded-46c0ded9ea80');
-INSERT INTO public.role_permissions VALUES ('83de7360-b95a-49fb-a8ae-d6de547e771e', 'ccf6010d-34d8-49ea-af5c-6f252bb2849a');
-INSERT INTO public.role_permissions VALUES ('b75c2760-0c76-46c9-99de-5595e43caadb', 'ccf6010d-34d8-49ea-af5c-6f252bb2849a');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', '306d654a-3a75-410d-9b0c-8c03bb00c168');
-INSERT INTO public.role_permissions VALUES ('b75c2760-0c76-46c9-99de-5595e43caadb', '306d654a-3a75-410d-9b0c-8c03bb00c168');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', 'b4faa72d-f3d0-41d6-aa62-d310f39df007');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', '7edbb4c5-d508-4eb2-96d6-5ac039d5af89');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', '057bd8a1-9433-404b-95d3-4a4424d8e106');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', 'b71675de-7225-4324-85d3-088eb9c676b1');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', '6145c6d0-a93b-4dfd-a200-3c64301fdbde');
-INSERT INTO public.role_permissions VALUES ('83de7360-b95a-49fb-a8ae-d6de547e771e', '2927f7ae-c732-4c1c-afd5-c68d77714b00');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', '2927f7ae-c732-4c1c-afd5-c68d77714b00');
-INSERT INTO public.role_permissions VALUES ('b75c2760-0c76-46c9-99de-5595e43caadb', '2927f7ae-c732-4c1c-afd5-c68d77714b00');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', '1a297b58-6706-4693-ad55-d5169927a2ae');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', '65278eeb-3d89-4133-83a2-409c12d3bd27');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', 'e8deca04-bcfd-4355-b505-b0328e7c89d8');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', '1624d272-43c1-49b6-beb0-a1d1e9b1f522');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', '7b29893c-214a-4f66-8ea7-769b03215bf3');
-INSERT INTO public.role_permissions VALUES ('b75c2760-0c76-46c9-99de-5595e43caadb', 'c3686743-5e09-48e4-b52c-713d8d3d3edf');
-INSERT INTO public.role_permissions VALUES ('b75c2760-0c76-46c9-99de-5595e43caadb', '72f90f07-ebfa-4e63-b78b-dc58561edc57');
-INSERT INTO public.role_permissions VALUES ('502f20bd-924e-4a72-8a4a-0e9af77a7cf8', '1b762558-6c52-408f-afb6-52917121a16b');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '010d6ee8-05f6-47aa-8a45-1174ec47baa7');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '1d6cd36e-631b-41df-97a1-723cb2ddc85f');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'a5b308f3-4503-4d45-a465-71e307500ca6');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '0736f4cf-0961-481e-be7b-db8f3acbd77c');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'c4f01264-2b3c-4704-9c8d-bbbf869f7e05');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'cea779a3-ebb5-456d-ae48-ad8e00da8b7e');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '5fa14288-0c51-4637-85ca-c294d3d88f4c');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'cfcf3ba9-c51d-4388-9621-db6ac2041d81');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'a91386c2-4cef-4c7b-a2fe-5bd0c89daf2d');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '33c2903c-98fc-4703-ae35-f95682421994');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'f6b8f68c-6aca-4850-beb1-84dce5e42cd8');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'ce258a47-1ea1-46aa-8900-5ca1d2ed4929');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '3c7b4436-7564-4878-b182-644f910fc1ad');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '781fe2db-edca-4d75-8dc4-e2b4220a1b9f');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '1db4dbe9-aa23-45e3-9828-8b3ff0963d48');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '0fc06bca-eb47-4f8b-8535-d0a8ad64dca9');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '670d136d-d80a-457a-bfdc-c200dd079544');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'fe550689-0808-4227-a631-4ee8bf80a6b4');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'e0e4edd4-9718-4c7a-bf7f-cbeac25de426');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'ac5af378-4bc9-4ab1-a359-de881bb1b3f5');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '0c224221-2661-4fff-abe1-b71d501ae3c5');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '58a5654d-d279-4947-9c83-76b7bcd6eb7a');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '81b8de81-131c-4afa-bd6b-0cf04ce52ebc');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '8673d1c0-cb59-4c39-a5eb-6f598176b85e');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'e9f7f96e-1aae-475f-8e2e-d570959074a6');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '76dafc2a-8b7a-4f20-ab55-3e6fe540d789');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'ca717cf5-b561-4c49-a002-8cf0496cccbd');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '9a29d277-20ff-4799-adf9-693a0183b585');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '06f25814-99a1-46aa-8a6b-afb68b558144');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'e16d68b6-d45e-43e8-9fb8-c0e935521303');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'aa28a62f-803b-4574-b2b8-199327550322');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'eb319fd1-1cad-4a92-a964-48f3ab7be604');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '763b99b7-1209-4e04-873b-b87ad416a63b');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '8e1f4f9a-52b8-435c-8026-97b49bec4d83');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '9ceb8190-ca39-4c51-8d2f-8a9e93136edd');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'fbb2d0e0-8fb6-4186-8a8e-20c5c21c05cf');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '9a681d91-3dc2-4075-a811-593fcf199e75');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '30658153-f26a-4422-bca6-c4f63be29d0d');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'df5677df-5a41-4f3a-9afc-f3fdb35c71a9');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'afe57c11-2f54-4e1a-b19a-be5148afd535');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '87618a40-46b7-4bd9-b7da-b7362a2a093a');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '58140960-b970-45a4-b64d-408f54702511');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '42147923-1608-4b91-9cc4-9b24af5c482d');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '7a7f9236-ac1e-44ab-bfcf-870a08a1e644');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '57664f4a-d7a4-448d-ba51-d1750ac5287b');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '005331de-421a-4941-af33-872c9ec5b1fb');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'd69f2832-4ffe-4378-a31a-a702f7b9240a');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'a729df13-b132-4904-a1c1-a05ec8049e96');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '3001d129-2dd0-4deb-a6d8-35b8f6f62c28');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '22c6dfd1-fdd8-44c0-8a76-acc5954f0d47');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'c4255d6d-ac40-4acc-868f-3aa6ca4c6d2b');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '48dc6ee0-ba05-43a2-9527-6aa6cae7b2d1');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'd72b7241-0c76-45e3-b76f-a4ac26055cc9');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'e5632431-3a9f-4c50-96b0-dae617a0e13a');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'cba3777e-10ad-4428-b073-d7ef006684cd');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'b52b064f-7f7d-40b1-bd61-b01cd0424343');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '0916f10a-7b07-40eb-9d0d-4a81a485135b');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '0dca1b8f-d4bc-411b-8b44-04e0cd5f79be');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'a268bbfd-e250-417d-9a68-7fcdcace10a0');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'ef4f549f-19da-44a3-9efe-cf26e87538fc');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'f88c55a0-c4de-4870-a6df-d34bfe5edc54');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '1970b0d9-cf4d-4dad-b92d-fe55eb8d518a');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '76b82b3d-aced-4a5e-8b6d-e3cce292331d');
+INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '32865a97-5d72-4552-871b-d5cb1755c4db');
+INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', '010d6ee8-05f6-47aa-8a45-1174ec47baa7');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '010d6ee8-05f6-47aa-8a45-1174ec47baa7');
+INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '010d6ee8-05f6-47aa-8a45-1174ec47baa7');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '1d6cd36e-631b-41df-97a1-723cb2ddc85f');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'a5b308f3-4503-4d45-a465-71e307500ca6');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '0736f4cf-0961-481e-be7b-db8f3acbd77c');
+INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', 'c4f01264-2b3c-4704-9c8d-bbbf869f7e05');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'c4f01264-2b3c-4704-9c8d-bbbf869f7e05');
+INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', 'c4f01264-2b3c-4704-9c8d-bbbf869f7e05');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'cea779a3-ebb5-456d-ae48-ad8e00da8b7e');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '5fa14288-0c51-4637-85ca-c294d3d88f4c');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'cfcf3ba9-c51d-4388-9621-db6ac2041d81');
+INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', 'a91386c2-4cef-4c7b-a2fe-5bd0c89daf2d');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'a91386c2-4cef-4c7b-a2fe-5bd0c89daf2d');
+INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', 'a91386c2-4cef-4c7b-a2fe-5bd0c89daf2d');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '33c2903c-98fc-4703-ae35-f95682421994');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'f6b8f68c-6aca-4850-beb1-84dce5e42cd8');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'ce258a47-1ea1-46aa-8900-5ca1d2ed4929');
+INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', '3c7b4436-7564-4878-b182-644f910fc1ad');
+INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '3c7b4436-7564-4878-b182-644f910fc1ad');
+INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', '781fe2db-edca-4d75-8dc4-e2b4220a1b9f');
+INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', '1db4dbe9-aa23-45e3-9828-8b3ff0963d48');
+INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '0fc06bca-eb47-4f8b-8535-d0a8ad64dca9');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '76dafc2a-8b7a-4f20-ab55-3e6fe540d789');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'ca717cf5-b561-4c49-a002-8cf0496cccbd');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '9a29d277-20ff-4799-adf9-693a0183b585');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '06f25814-99a1-46aa-8a6b-afb68b558144');
+INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', '8e1f4f9a-52b8-435c-8026-97b49bec4d83');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '8e1f4f9a-52b8-435c-8026-97b49bec4d83');
+INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '8e1f4f9a-52b8-435c-8026-97b49bec4d83');
+INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', '9ceb8190-ca39-4c51-8d2f-8a9e93136edd');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '9ceb8190-ca39-4c51-8d2f-8a9e93136edd');
+INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', 'fbb2d0e0-8fb6-4186-8a8e-20c5c21c05cf');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'fbb2d0e0-8fb6-4186-8a8e-20c5c21c05cf');
+INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', '9a681d91-3dc2-4075-a811-593fcf199e75');
+INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', '30658153-f26a-4422-bca6-c4f63be29d0d');
+INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', 'df5677df-5a41-4f3a-9afc-f3fdb35c71a9');
+INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', 'df5677df-5a41-4f3a-9afc-f3fdb35c71a9');
+INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', 'afe57c11-2f54-4e1a-b19a-be5148afd535');
+INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '87618a40-46b7-4bd9-b7da-b7362a2a093a');
+INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '58140960-b970-45a4-b64d-408f54702511');
+INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '42147923-1608-4b91-9cc4-9b24af5c482d');
+INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', '7a7f9236-ac1e-44ab-bfcf-870a08a1e644');
+INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '7a7f9236-ac1e-44ab-bfcf-870a08a1e644');
+INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', '57664f4a-d7a4-448d-ba51-d1750ac5287b');
+INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '57664f4a-d7a4-448d-ba51-d1750ac5287b');
+INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', '005331de-421a-4941-af33-872c9ec5b1fb');
+INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '005331de-421a-4941-af33-872c9ec5b1fb');
+INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', 'd69f2832-4ffe-4378-a31a-a702f7b9240a');
+INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', 'a729df13-b132-4904-a1c1-a05ec8049e96');
+INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', 'a729df13-b132-4904-a1c1-a05ec8049e96');
+INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', '3001d129-2dd0-4deb-a6d8-35b8f6f62c28');
+INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '3001d129-2dd0-4deb-a6d8-35b8f6f62c28');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '22c6dfd1-fdd8-44c0-8a76-acc5954f0d47');
+INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '22c6dfd1-fdd8-44c0-8a76-acc5954f0d47');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'c4255d6d-ac40-4acc-868f-3aa6ca4c6d2b');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '48dc6ee0-ba05-43a2-9527-6aa6cae7b2d1');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'd72b7241-0c76-45e3-b76f-a4ac26055cc9');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'e5632431-3a9f-4c50-96b0-dae617a0e13a');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'cba3777e-10ad-4428-b073-d7ef006684cd');
+INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', 'b52b064f-7f7d-40b1-bd61-b01cd0424343');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'b52b064f-7f7d-40b1-bd61-b01cd0424343');
+INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', 'b52b064f-7f7d-40b1-bd61-b01cd0424343');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '0916f10a-7b07-40eb-9d0d-4a81a485135b');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '0dca1b8f-d4bc-411b-8b44-04e0cd5f79be');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'a268bbfd-e250-417d-9a68-7fcdcace10a0');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'ef4f549f-19da-44a3-9efe-cf26e87538fc');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'f88c55a0-c4de-4870-a6df-d34bfe5edc54');
+INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '1970b0d9-cf4d-4dad-b92d-fe55eb8d518a');
+INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '76b82b3d-aced-4a5e-8b6d-e3cce292331d');
+INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '32865a97-5d72-4552-871b-d5cb1755c4db');
 
 
 --
 -- Name: pgmigrations_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.pgmigrations_id_seq', 2, true);
+SELECT pg_catalog.setval('public.pgmigrations_id_seq', 7, true);
 
 
 --

@@ -34,15 +34,16 @@ export class PricingService {
     const ids=input.map(i=>i.variantId).sort();
     await this.db.query('SELECT id FROM product_variants WHERE id=ANY($1::uuid[]) ORDER BY id FOR SHARE',[ids]);
     const active=await this.db.query("SELECT * FROM promotions WHERE status='ACTIVE' AND starts_at<=now() AND ends_at>=now() ORDER BY id FOR SHARE");
+    if(editingOrderId)await this.db.query("SELECT id FROM vouchers WHERE id IN (SELECT voucher_id FROM voucher_redemptions WHERE order_id=$1 AND status='HELD') OR lower(code)=lower($2) ORDER BY id FOR UPDATE",[editingOrderId,c.body.voucherCode||'']);
     const promotionIds=active.map(p=>String(p.id));
-    const productRules=await this.db.query('SELECT r.*,p.name AS promotion_name FROM product_promotion_rules r JOIN promotions p ON p.id=r.promotion_id WHERE p.id=ANY($1::uuid[]) ORDER BY r.id',[promotionIds]);
-    const orderRules=await this.db.query('SELECT r.*,p.name AS promotion_name FROM order_promotion_rules r JOIN promotions p ON p.id=r.promotion_id WHERE p.id=ANY($1::uuid[]) ORDER BY r.id',[promotionIds]);
+    const productRules=await this.db.query('SELECT r.*,p.name AS promotion_name FROM product_promotion_rules r JOIN promotions p ON p.id=r.promotion_id WHERE p.id=ANY($1::uuid[]) AND p.type=\'PRODUCT\' ORDER BY r.id',[promotionIds]);
+    const orderRules=await this.db.query('SELECT r.*,p.name AS promotion_name FROM order_promotion_rules r JOIN promotions p ON p.id=r.promotion_id WHERE p.id=ANY($1::uuid[]) AND p.type=\'ORDER\' ORDER BY r.id',[promotionIds]);
     const items:Row[]=[],discounts:Row[]=[];
     let subtotal=0n,productTotal=0n;
     for(const selected of [...input].sort((a,b)=>a.variantId.localeCompare(b.variantId))){
       assert(Number.isInteger(selected.quantity)&&selected.quantity>0&&selected.quantity<=1000000,'VALIDATION_ERROR','Số lượng không hợp lệ.',400);
       const v=await this.db.one(`SELECT v.*,p.name AS product_name,p.status AS product_status,b.stock_quantity,
-        (SELECT i.url FROM api_images i WHERE i.product_id=p.id AND (i.variant_id IS NULL OR i.variant_id=v.id) ORDER BY (i.variant_id=v.id) DESC NULLS LAST,i.sort_order,i.id LIMIT 1) AS thumbnail_url
+        COALESCE((SELECT i.url FROM api_images i WHERE i.product_id=p.id AND i.variant_id=v.id ORDER BY i.sort_order,i.id LIMIT 1),(SELECT m.url FROM media_assets m WHERE m.id=p.thumbnail_media_id),(SELECT i.url FROM api_images i WHERE i.product_id=p.id AND i.variant_id IS NULL ORDER BY i.sort_order,i.id LIMIT 1)) AS thumbnail_url
         FROM product_variants v JOIN products p ON p.id=v.product_id JOIN api_public_products pub ON pub.id=p.id JOIN inventory_balances b ON b.variant_id=v.id WHERE v.id=$1`,[selected.variantId]);
       assert(v.status==='ACTIVE'&&v.productStatus==='ACTIVE','INVALID_STATE','Biến thể đã ngừng bán.');
       assert(Number(v.stockQuantity)>=selected.quantity,'INSUFFICIENT_STOCK','Không đủ tồn kho cho biến thể đã chọn.');
@@ -67,7 +68,7 @@ export class PricingService {
     remaining-=orderAmount;
     let voucher:Row|null=null,voucherAmount=0n;
     if(c.body.voucherCode){
-      const found=await this.db.query('SELECT v.*,p.name AS promotion_name FROM vouchers v JOIN promotions p ON p.id=v.promotion_id WHERE lower(trim(v.code))=lower(trim($1)) FOR UPDATE OF v',[c.body.voucherCode]);
+      const found=await this.db.query('SELECT v.*,p.name AS promotion_name FROM vouchers v JOIN promotions p ON p.id=v.promotion_id WHERE p.type=\'VOUCHER\' AND lower(trim(v.code))=lower(trim($1)) FOR UPDATE OF v',[c.body.voucherCode]);
       voucher=found[0]||null;
       assert(voucher&&voucher.status==='ACTIVE'&&promotionIds.includes(String(voucher.promotionId))&&remaining>=money(voucher.minOrderAmount),'VOUCHER_INVALID','Voucher không hợp lệ hoặc chưa đủ điều kiện.');
       const usage=await this.db.one("SELECT count(*)::integer AS total,count(*) FILTER(WHERE customer_id=$2)::integer AS customer FROM voucher_redemptions WHERE voucher_id=$1 AND status IN ('HELD','USED') AND ($3::uuid IS NULL OR order_id<>$3::uuid)",[voucher.id,c.actor.customerId,editingOrderId||null]);

@@ -78,8 +78,9 @@ erDiagram
 | media_assets, product_images | File thật và thứ tự ảnh; ảnh public không chứa credential |
 | suppliers, supplier_variants | Nhà cung cấp và danh sách SKU được cung ứng |
 | promotions, product_promotion_rules, order_promotion_rules, vouchers | Cấu hình hiệu lực và quy tắc giảm giá |
+| promotion_usage | Sổ từng áp dụng điều kiện; trigger từ order_discounts, không mất dấu khi sửa đơn chờ; FK ngăn xóa cấu hình đã dùng |
 | orders, order_items, order_discounts, order_status_history | Snapshot giao dịch và lịch sử trạng thái; sửa hồ sơ không đổi giao dịch cũ |
-| voucher_redemptions | HELD khi đặt, RELEASED khi hủy, USED khi hoàn tất; giữ lượt có khóa đồng thời |
+| voucher_redemptions | HELD khi đặt, USED khi xác nhận, RELEASED khi hủy hợp lệ; giữ lượt có khóa đồng thời |
 | payments, refunds | Đối soát thu/hoàn thủ công, số tiền đã xác nhận, mã tham chiếu unique |
 | invoices, invoice_items | Hóa đơn từ đơn hoàn tất, tổng dòng theo giá gốc; không tác động kho |
 | goods_receipts, goods_receipt_items | Phiếu nhập DRAFT → POSTED; POSTED mới tăng kho |

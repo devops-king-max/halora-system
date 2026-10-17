@@ -43,7 +43,6 @@ export class OrdersService {
       assert(old.status==='PENDING_CONFIRMATION','INVALID_STATE','Chỉ sửa đơn chờ xác nhận.');
       const paid=await this.db.one('SELECT paid_amount FROM api_orders WHERE id=$1',[old.id]);
       assert(money(paid.paidAmount)===0n,'INVALID_STATE','Không sửa đơn đã thu tiền.');
-      await this.db.query("SELECT id FROM vouchers WHERE id IN (SELECT voucher_id FROM voucher_redemptions WHERE order_id=$1 AND status='HELD') OR lower(code)=lower($2) ORDER BY id FOR UPDATE",[old.id,c.body.voucherCode||'']);
     }
     const result=await this.pricing.calculate(c,old?String(old.id):undefined);
     this.pricing.verify(c,result,old?String(old.id):undefined);
@@ -71,6 +70,8 @@ export class OrdersService {
     let next:string;
     if(action==='confirm'){
       assert(order.status==='PENDING_CONFIRMATION','INVALID_STATE','Đơn không ở trạng thái chờ xác nhận.');
+      await this.db.query('SELECT id FROM vouchers WHERE id IN (SELECT voucher_id FROM voucher_redemptions WHERE order_id=$1) ORDER BY id FOR UPDATE',[order.id]);
+      await this.db.query("UPDATE voucher_redemptions SET status='USED' WHERE order_id=$1 AND status='HELD'",[order.id]);
       const items=await this.db.query('SELECT variant_id,quantity FROM order_items WHERE order_id=$1 ORDER BY variant_id',[order.id]);
       await this.stock.apply(c.actor,items.map(i=>({variantId:String(i.variantId),quantityDelta:-Number(i.quantity)})),'SALE','ORDER',order.id,c.body.note);
       await this.db.query('UPDATE orders SET confirmed_at=clock_timestamp() WHERE id=$1',[order.id]);next='CONFIRMED';
@@ -82,7 +83,7 @@ export class OrdersService {
       const balance=await this.db.one('SELECT paid_amount,total_amount FROM api_orders WHERE id=$1',[order.id]);
       assert(money(balance.paidAmount)===money(balance.totalAmount),'INVALID_STATE','Đơn phải được thu đủ tiền trước khi hoàn tất.');
       await this.db.query('UPDATE orders SET completed_at=clock_timestamp() WHERE id=$1',[order.id]);
-      await this.db.query("UPDATE voucher_redemptions SET status='USED' WHERE order_id=$1 AND status='HELD'",[order.id]);next='COMPLETED';
+      next='COMPLETED';
     }else{
       assert(customer?order.status==='PENDING_CONFIRMATION':['PENDING_CONFIRMATION','CONFIRMED'].includes(String(order.status)),'INVALID_STATE','Đơn không còn được hủy.');
       await this.db.query('SELECT id FROM vouchers WHERE id IN (SELECT voucher_id FROM voucher_redemptions WHERE order_id=$1) ORDER BY id FOR UPDATE',[order.id]);
@@ -90,7 +91,7 @@ export class OrdersService {
         const items=await this.db.query('SELECT variant_id,quantity FROM order_items WHERE order_id=$1 ORDER BY variant_id',[order.id]);
         await this.stock.apply(c.actor,items.map(i=>({variantId:String(i.variantId),quantityDelta:Number(i.quantity)})),'CANCELLATION','ORDER_CANCEL',order.id,c.body.reason);
       }
-      await this.db.query("UPDATE voucher_redemptions SET status='RELEASED' WHERE order_id=$1 AND status='HELD'",[order.id]);
+      await this.db.query("UPDATE voucher_redemptions SET status='RELEASED' WHERE order_id=$1 AND status IN ('HELD','USED')",[order.id]);
       await this.db.query("UPDATE payments SET status='CANCELLED',updated_at=clock_timestamp() WHERE order_id=$1 AND status='PENDING'",[order.id]);
       await this.db.query("INSERT INTO refunds(order_id,payment_id,amount,reason) SELECT order_id,id,amount,$2 FROM payments WHERE order_id=$1 AND status='SUCCEEDED' ON CONFLICT(payment_id) DO NOTHING",[order.id,c.body.reason]);
       await this.db.query('UPDATE orders SET cancelled_at=clock_timestamp(),cancellation_reason=$2 WHERE id=$1',[order.id,c.body.reason]);next='CANCELLED';

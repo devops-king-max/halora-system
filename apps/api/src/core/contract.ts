@@ -59,7 +59,8 @@ export class Contract {
           if(['password','newPassword'].includes(key)){property.minLength=10;property.maxLength=128;}
           if(key==='username'){property.minLength=3;property.maxLength=64;property.pattern='^[a-zA-Z0-9_.-]+$';}
           if(key==='quantity'){property.minimum=1;property.maximum=1000000;}
-          if(['version','minQuantity','perCustomerLimit'].includes(key))property.minimum=1;
+          if(key==='version')property.minimum=1;
+          if(['minQuantity','perCustomerLimit'].includes(key)&&property.minimum===undefined)property.minimum=0;
           if(key==='items'&&property.type==='array'){property.minItems=1;property.maxItems=100;}
           if(key.endsWith('Ids')&&property.type==='array'){property.maxItems=200;property.uniqueItems=true;}
         }

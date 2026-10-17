@@ -565,9 +565,9 @@ export const ProductDetailPage: React.FC = () => {
           <Form.Item
             name="sku"
             label="Mã SKU biến thể"
-            rules={[{ required: true, message: "Vui lòng nhập SKU" }]}
+            rules={[{ pattern: /^SKU[0-9]{2,}$/, message: "Mã có dạng SKU01, SKU02..." }]}
           >
-            <Input placeholder="Ví dụ: LRP-B5-30ML" />
+            <Input placeholder="Để trống để cấp tự động: SKU01, SKU02..." readOnly={!!editingVariant} />
           </Form.Item>
 
           <Form.Item
@@ -662,15 +662,15 @@ export const ProductDetailPage: React.FC = () => {
             </Upload>
             {uploadedMediaId && (
               <div style={{ marginTop: 8, color: "#52c41a", fontSize: 13 }}>
-                ✓ Đã tải tệp ảnh lên máy chủ (Media ID: <code>{uploadedMediaId}</code>)
+                ✓ Đã tải tệp ảnh lên máy chủ
               </div>
             )}
           </Form.Item>
 
           <Form.Item
             name="mediaId"
-            label="Media Asset ID"
-            rules={[{ required: true, message: "Vui lòng tải tệp ảnh lên hoặc nhập Media ID" }]}
+            hidden
+            rules={[{ required: true, message: "Vui lòng tải tệp ảnh lên" }]}
           >
             <Input placeholder="UUID của tệp media tải lên" />
           </Form.Item>

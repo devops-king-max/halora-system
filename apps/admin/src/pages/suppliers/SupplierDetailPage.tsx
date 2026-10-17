@@ -1,3 +1,4 @@
+import { BusinessCodeSelect } from "../../components/common/BusinessCodeSelect";
 import React, { useState } from "react";
 import {
   Typography,
@@ -333,13 +334,10 @@ export const SupplierDetailPage: React.FC = () => {
         <Form form={form} layout="vertical" onFinish={handleFormSubmit} requiredMark="optional">
           <Form.Item
             name="variantId"
-            label="Mã định danh biến thể (Variant ID)"
-            rules={[{ required: true, message: "Vui lòng nhập hoặc chọn Variant ID" }]}
+            label="Biến thể / SKU"
+            rules={[{ required: true, message: "Chọn biến thể" }]}
           >
-            <Input
-              disabled={!!editingVariantLink}
-              placeholder="UUID của biến thể sản phẩm (nhập từ chi tiết sản phẩm)"
-            />
+            <BusinessCodeSelect disabled={!!editingVariantLink} />
           </Form.Item>
 
           <Form.Item

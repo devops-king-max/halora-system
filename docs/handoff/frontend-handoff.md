@@ -30,7 +30,7 @@ Frontend ẩn/chặn nút theo quyền trả trong Principal; backend vẫn ki�
 | Loại sản phẩm, thương hiệu, sản phẩm | `categories.*`, `brands.*`, `products.*`; thao tác `read/create/update/delete` |
 | Khách hàng | `customers.read/update/delete` |
 | Nhân viên | `employees.read/create/update/delete/createAccount/assignRoles` |
-| Tài khoản, vai trò | `accounts.read/update`, `roles.read/update`, `permissions.read` |
+| Tài khoản, vai trò | `accounts.read/update`, `roles.read`, `employees.assignRoles`; bộ quyền từng vai trò cố định |
 | Nhà cung cấp, khuyến mãi | `suppliers.*`, `promotions.*`; thao tác `read/create/update/delete` |
 | Đơn hàng | `orders.read/confirm/dispatch/complete/cancel` |
 | Thu/hoàn tiền | `payments.create/confirm/fail`, `refunds.confirm/fail` |
@@ -68,3 +68,11 @@ Giỏ/pending chưa giữ kho. Confirm xuất một lần; cancel confirmed hoà
 Web mặc định dùng URL `/api/v1` cùng origin; Vite proxy qua backend. App cần URL theo Android Emulator hoặc IP LAN, không dùng localhost trên điện thoại. Xem README cho cổng demo/development và EAS profile.
 
 Bộ kiểm thử tự động đã có API thật + PostgreSQL riêng, SMTP Mailpit và browser web. Android JS export khác APK; việc cài/ký APK và kiểm tra thiết bị cần môi trường Android/EAS. Phạm vi thực tế, kết quả và giới hạn ghi tại `docs/handoff/verification.md`.
+
+Khuyến mãi/voucher (17/10/2026): trang chi tiết có đủ CRUD ba loại điều kiện, danh sách server có phân trang/tìm mã; input PATCH kèm version và output có code/hasUsage. Backend cho sửa mức giảm cho đơn mới sau khi ưu đãi đã dùng, giữ snapshot giao dịch cũ, khóa thay phạm vi đã dùng và cấm xóa. Xem mapping mục 1.10 và OpenAPI cho from/to/productId, giới hạn 0/null, usedCount/reservedCount. App vẫn lấy toàn bộ tiền giảm từ checkout quote, không nhân phần trăm tại frontend.
+
+## App Android native trên Windows
+
+Expo prebuild sinh thư mục `apps/mobile/android` (bỏ qua Git/Docker context). Cấu hình được giữ trong app.json và plugins: `withAndroidKotlin` đưa phiên bản Kotlin khai báo vào classpath để đồng bộ Expo 52/Compose với React Native 0.76.6; `withLocalApi` cho HTTP đúng ba host localhost, 127.0.0.1 và 10.0.2.2, các host khác bắt buộc HTTPS. Metro dùng gốc apps/mobile, watch workspace để đọc API client, tối đa 2 worker; xử lý entry tương đối của Gradle trên Windows. Không sửa thư viện trong node_modules.
+
+Lệnh build/cài/chạy cục bộ nằm trong `infra/scripts/` và được gọi qua `pnpm android:build:local`, `pnpm android:install:local`, `pnpm android:run:local`. APK x86_64 ký debug để chạy máy ảo, kèm bundle Hermes, không cần Metro; API tại 127.0.0.1:8081 được nối qua adb reverse. SDK/JDK17/Gradle cache dùng ổ D, không sửa JAVA_HOME toàn hệ thống. Đăng nhập app dùng identifier là tên đăng nhập hoặc email, giữ refresh token trong SecureStore.

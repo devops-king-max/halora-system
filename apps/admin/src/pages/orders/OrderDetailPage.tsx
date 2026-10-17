@@ -280,10 +280,10 @@ export const OrderDetailPage: React.FC = () => {
 
   const paymentColumns = [
     {
-      title: "Mã giao dịch",
-      dataIndex: "id",
-      key: "id",
-      render: (id: string) => <code>{id.substring(0, 8)}...</code>,
+      title: "Tham chiếu thanh toán",
+      dataIndex: "reference",
+      key: "reference",
+      render: (reference: string | null) => <code>{reference || "Chưa có tham chiếu"}</code>,
     },
     {
       title: "Phương thức",
@@ -352,10 +352,10 @@ export const OrderDetailPage: React.FC = () => {
 
   const refundColumns = [
     {
-      title: "Mã khoản hoàn",
-      dataIndex: "id",
-      key: "id",
-      render: (id: string) => <code>{id.substring(0, 8)}...</code>,
+      title: "Tham chiếu hoàn tiền",
+      dataIndex: "reference",
+      key: "reference",
+      render: (reference: string | null) => <code>{reference || "Chưa có tham chiếu"}</code>,
     },
     {
       title: "Số tiền hoàn",

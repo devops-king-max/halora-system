@@ -30,6 +30,7 @@ export type RefundStatus = "PENDING" | "SUCCEEDED" | "FAILED";
 export type DocumentStatus = "DRAFT" | "POSTED" | "CANCELLED";
 
 export type PromotionStatus = "DRAFT" | "ACTIVE" | "PAUSED" | "ENDED";
+export type PromotionType = "PRODUCT" | "ORDER" | "VOUCHER";
 
 export type StockMovementType =
   | "RECEIPT"
@@ -101,6 +102,7 @@ export interface ActionInput {
 // ================= AUTHENTICATION & PRINCIPAL =================
 export interface Principal {
   accountId: UUID;
+  accountCode: string;
   realm: AccountRealm;
   username: string;
   email: string;
@@ -154,6 +156,8 @@ export interface CategoryInput {
 
 // ================= BRANDS =================
 export interface Brand extends EntityMetadata {
+  thumbnailMediaId: UUID | null;
+  thumbnailUrl: string | null;
   code: string;
   name: string;
   description: string | null;
@@ -161,6 +165,7 @@ export interface Brand extends EntityMetadata {
 }
 
 export interface BrandInput {
+  thumbnailMediaId?: UUID | null;
   name: string;
   description: string | null;
   status: ActiveStatus;
@@ -168,6 +173,8 @@ export interface BrandInput {
 
 // ================= PRODUCTS & VARIANTS =================
 export interface Product extends EntityMetadata {
+  thumbnailMediaId: UUID | null;
+  thumbnailUrl: string | null;
   code: string;
   name: string;
   slug: string;
@@ -181,6 +188,7 @@ export interface Product extends EntityMetadata {
 }
 
 export interface ProductInput {
+  thumbnailMediaId?: UUID | null;
   name: string;
   slug: string;
   categoryId: UUID;
@@ -207,7 +215,7 @@ export interface ProductVariant extends EntityMetadata {
 }
 
 export interface VariantInput {
-  sku: string;
+  sku?: string;
   name: string;
   color: string | null;
   volumeMl: number | null;
@@ -359,6 +367,8 @@ export interface EmployeeRoleAssignInput {
 }
 
 export interface Account extends EntityMetadata {
+  code: string;
+  roleIds: UUID[];
   realm: AccountRealm;
   username: string;
   email: string;
@@ -379,8 +389,8 @@ export interface Role extends EntityMetadata {
   permissionIds: UUID[];
 }
 
-export interface RolePermissionAssignInput {
-  permissionIds: UUID[];
+export interface AccountRoleAssignInput {
+  roleIds: UUID[];
   version: number;
 }
 
@@ -753,6 +763,8 @@ export interface InventoryAdjustmentInput {
 
 // ================= PROMOTIONS & VOUCHERS =================
 export interface Promotion extends EntityMetadata {
+  type: PromotionType;
+  hasConditions: boolean;
   code: string;
   name: string;
   description: string | null;
@@ -763,6 +775,7 @@ export interface Promotion extends EntityMetadata {
 }
 
 export interface PromotionInput {
+  type: PromotionType;
   name: string;
   description: string | null;
   startsAt: ISODateTime;
@@ -771,6 +784,8 @@ export interface PromotionInput {
 }
 
 export interface ProductPromotionRule extends EntityMetadata {
+  code: string;
+  hasUsage: boolean;
   promotionId: UUID;
   productId: UUID;
   variantId: UUID | null;
@@ -788,6 +803,8 @@ export interface ProductPromotionRuleInput {
 }
 
 export interface OrderPromotionRule extends EntityMetadata {
+  code: string;
+  hasUsage: boolean;
   promotionId: UUID;
   minOrderAmount: Money;
   discountPercent: Percentage;
@@ -801,6 +818,7 @@ export interface OrderPromotionRuleInput {
 }
 
 export interface Voucher extends EntityMetadata {
+  hasUsage: boolean;
   promotionId: UUID;
   code: string;
   discountPercent: Percentage;
@@ -814,7 +832,7 @@ export interface Voucher extends EntityMetadata {
 }
 
 export interface VoucherInput {
-  code: string;
+  code?: string;
   discountPercent: Percentage;
   minOrderAmount: Money;
   maxDiscountAmount: Money | null;

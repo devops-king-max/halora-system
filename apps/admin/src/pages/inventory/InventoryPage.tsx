@@ -201,7 +201,7 @@ export const InventoryPage: React.FC = () => {
       render: (st: string, r: StockMovement) => (
         <span>
           <Tag>{st}</Tag>
-          {r.sourceId && <span style={{ fontSize: 11, color: "#8c8c8c" }}>{r.sourceId.substring(0, 8)}...</span>}
+
         </span>
       ),
     },

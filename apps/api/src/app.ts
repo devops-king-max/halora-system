@@ -35,7 +35,7 @@ class Errors implements ExceptionFilter {
 @Module({controllers:[ApiController],providers:[Database,AuthService,CatalogService,CustomerService,PricingService,OrdersService,StockService,DocumentsService,ReportsService,FilesService]})
 export class AppModule{}
 export async function createApp(){
-  const app=await NestFactory.create(AppModule,{logger:process.env.NODE_ENV==='test'?false:['error','warn','log']});
+  const app=await NestFactory.create(AppModule,{abortOnError:false,logger:process.env.NODE_ENV==='test'?false:['error','warn','log']});
   app.setGlobalPrefix('api/v1');
   app.use((req:Request,res:Response,next:()=>void)=>{
     const id=randomUUID(),start=Date.now();req.headers['x-request-id']=id;res.setHeader('X-Request-Id',id);

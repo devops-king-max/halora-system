@@ -98,6 +98,7 @@ export default function ProductDetailScreen() {
     addToCartMutation.mutate();
   };
 
+  const displayImages = product?.thumbnailUrl ? [{ id: 'thumbnail', url: product.thumbnailUrl }, ...(product.images || []).filter(image => image.url !== product.thumbnailUrl)] : product?.images || [];
   const variants = product?.variants || [];
   const currentPrice = selectedVariant?.salePrice || product?.priceFrom || "0";
   const stock = selectedVariant ? selectedVariant.stockQuantity : variants.reduce((acc, v) => acc + v.stockQuantity, 0);
@@ -116,14 +117,14 @@ export default function ProductDetailScreen() {
           <>
             <ScrollView style={styles.scrollContent}>
               {/* Product Image Gallery */}
-              {product.images && product.images.length > 0 ? (
+              {displayImages.length > 0 ? (
                 <ScrollView
                   horizontal
                   pagingEnabled
                   showsHorizontalScrollIndicator={false}
                   style={styles.imageScroll}
                 >
-                  {product.images.map((img: ProductImage, index: number) => (
+                  {displayImages.map((img, index: number) => (
                     <Image
                       key={img.id || index}
                       source={{ uri: img.url }}

@@ -8,8 +8,8 @@ import { z } from "zod";
 import { useAuth } from "../src/AuthContext";
 
 const loginSchema = z.object({
-  email: z.string().email("Email không đúng định dạng"),
-  password: z.string().min(6, "Mật khẩu tối thiểu 6 ký tự"),
+  identifier: z.string().trim().min(1, "Nhập tên đăng nhập hoặc email").max(320),
+  password: z.string().min(1, "Nhập mật khẩu"),
 });
 
 type LoginFormData = z.infer<typeof loginSchema>;
@@ -27,7 +27,7 @@ export default function LoginScreen() {
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: "",
+      identifier: "",
       password: "",
     },
   });
@@ -36,11 +36,12 @@ export default function LoginScreen() {
     setIsSubmitting(true);
     try {
       await login(data);
-      router.back();
+      if (router.canGoBack()) router.back();
+      else router.replace("/(tabs)/account");
     } catch (err: any) {
       Alert.alert(
         "Đăng nhập thất bại",
-        err?.message || "Email hoặc mật khẩu không chính xác."
+        err?.message || "Tài khoản hoặc mật khẩu không chính xác."
       );
     } finally {
       setIsSubmitting(false);
@@ -59,26 +60,26 @@ export default function LoginScreen() {
 
         <Controller
           control={control}
-          name="email"
+          name="identifier"
           render={({ field: { onChange, onBlur, value } }) => (
             <TextInput
               mode="outlined"
-              label="Email *"
-              placeholder="example@gmail.com"
-              keyboardType="email-address"
+              label="Tên đăng nhập hoặc Email *"
+              placeholder="Tên đăng nhập hoặc email"
               autoCapitalize="none"
+              autoCorrect={false}
               onBlur={onBlur}
               onChangeText={onChange}
               value={value}
-              error={!!errors.email}
+              error={!!errors.identifier}
               outlineColor="#d1d5db"
               activeOutlineColor="#b03a5b"
               style={styles.input}
             />
           )}
         />
-        {errors.email && (
-          <Text style={styles.errorText}>{errors.email.message}</Text>
+        {errors.identifier && (
+          <Text style={styles.errorText}>{errors.identifier.message}</Text>
         )}
 
         <Controller
