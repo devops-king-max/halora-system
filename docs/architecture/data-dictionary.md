@@ -821,11 +821,13 @@ Chỉ mục:
 | `updated_at` | `timestamp with time zone` | Có | now() |
 | `version` | `integer` | Có | 1 |
 | `code` | `text` | Có | halora_code('KMHD'::text) |
+| `promotion_type` | `text` | Không | 'ORDER'::text |
 
 Ràng buộc:
 
 - `order_promotion_rules_code_check`: `CHECK ((code ~ '^KMHD[0-9]{2,}$'::text))`
 - `order_promotion_rules_promotion_id_fkey`: `FOREIGN KEY (promotion_id) REFERENCES promotions(id) ON DELETE RESTRICT`
+- `order_rules_promotion_type_fk`: `FOREIGN KEY (promotion_id, promotion_type) REFERENCES promotions(id, type) ON UPDATE RESTRICT ON DELETE RESTRICT`
 - `order_promotion_rules_code_not_null`: `NOT NULL code`
 - `order_promotion_rules_created_at_not_null`: `NOT NULL created_at`
 - `order_promotion_rules_discount_percent_not_null`: `NOT NULL discount_percent`
@@ -1078,6 +1080,7 @@ Chỉ mục:
 | `updated_at` | `timestamp with time zone` | Có | now() |
 | `version` | `integer` | Có | 1 |
 | `code` | `text` | Có | halora_code('KMSP'::text) |
+| `promotion_type` | `text` | Không | 'PRODUCT'::text |
 
 Ràng buộc:
 
@@ -1086,6 +1089,7 @@ Ràng buộc:
 - `product_promotion_rules_product_id_fkey`: `FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT`
 - `product_promotion_rules_product_id_variant_id_fkey`: `FOREIGN KEY (product_id, variant_id) REFERENCES product_variants(product_id, id) ON DELETE RESTRICT`
 - `product_promotion_rules_promotion_id_fkey`: `FOREIGN KEY (promotion_id) REFERENCES promotions(id) ON DELETE RESTRICT`
+- `product_rules_promotion_type_fk`: `FOREIGN KEY (promotion_id, promotion_type) REFERENCES promotions(id, type) ON UPDATE RESTRICT ON DELETE RESTRICT`
 - `product_promotion_rules_code_not_null`: `NOT NULL code`
 - `product_promotion_rules_created_at_not_null`: `NOT NULL created_at`
 - `product_promotion_rules_discount_percent_not_null`: `NOT NULL discount_percent`
@@ -1247,12 +1251,14 @@ Chỉ mục:
 | `created_at` | `timestamp with time zone` | Có | now() |
 | `updated_at` | `timestamp with time zone` | Có | now() |
 | `version` | `integer` | Có | 1 |
+| `type` | `text` | Có | — |
 
 Ràng buộc:
 
 - `promotions_business_code_format`: `CHECK ((code ~ '^KM[0-9]{2,}$'::text))`
 - `promotions_check`: `CHECK ((starts_at <= ends_at))`
 - `promotions_status_check`: `CHECK ((status = ANY (ARRAY['DRAFT'::text, 'ACTIVE'::text, 'PAUSED'::text, 'ENDED'::text])))`
+- `promotions_type_check`: `CHECK ((type = ANY (ARRAY['PRODUCT'::text, 'ORDER'::text, 'VOUCHER'::text])))`
 - `promotions_code_not_null`: `NOT NULL code`
 - `promotions_created_at_not_null`: `NOT NULL created_at`
 - `promotions_ends_at_not_null`: `NOT NULL ends_at`
@@ -1260,14 +1266,17 @@ Ràng buộc:
 - `promotions_name_not_null`: `NOT NULL name`
 - `promotions_starts_at_not_null`: `NOT NULL starts_at`
 - `promotions_status_not_null`: `NOT NULL status`
+- `promotions_type_not_null`: `NOT NULL type`
 - `promotions_updated_at_not_null`: `NOT NULL updated_at`
 - `promotions_version_not_null`: `NOT NULL version`
 - `promotions_pkey`: `PRIMARY KEY (id)`
 - `promotions_code_key`: `UNIQUE (code)`
+- `promotions_id_type_unique`: `UNIQUE (id, type)`
 
 Chỉ mục:
 
 - `CREATE UNIQUE INDEX promotions_code_key ON public.promotions USING btree (code)`
+- `CREATE UNIQUE INDEX promotions_id_type_unique ON public.promotions USING btree (id, type)`
 - `CREATE UNIQUE INDEX promotions_pkey ON public.promotions USING btree (id)`
 
 ### refunds
@@ -1522,6 +1531,7 @@ Chỉ mục:
 | `created_at` | `timestamp with time zone` | Có | now() |
 | `updated_at` | `timestamp with time zone` | Có | now() |
 | `version` | `integer` | Có | 1 |
+| `promotion_type` | `text` | Không | 'VOUCHER'::text |
 
 Ràng buộc:
 
@@ -1530,6 +1540,7 @@ Ràng buộc:
 - `vouchers_per_customer_limit_check`: `CHECK ((per_customer_limit >= 0))`
 - `vouchers_status_check`: `CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'INACTIVE'::text])))`
 - `vouchers_promotion_id_fkey`: `FOREIGN KEY (promotion_id) REFERENCES promotions(id) ON DELETE RESTRICT`
+- `vouchers_promotion_type_fk`: `FOREIGN KEY (promotion_id, promotion_type) REFERENCES promotions(id, type) ON UPDATE RESTRICT ON DELETE RESTRICT`
 - `vouchers_code_not_null`: `NOT NULL code`
 - `vouchers_created_at_not_null`: `NOT NULL created_at`
 - `vouchers_discount_percent_not_null`: `NOT NULL discount_percent`

@@ -77,7 +77,7 @@ erDiagram
 | categories, brands, products, product_variants | Loại sản phẩm, thương hiệu, mô tả và SKU/giá hiện hành |
 | media_assets, product_images | File thật và thứ tự ảnh; ảnh public không chứa credential |
 | suppliers, supplier_variants | Nhà cung cấp và danh sách SKU được cung ứng |
-| promotions, product_promotion_rules, order_promotion_rules, vouchers | Cấu hình hiệu lực và quy tắc giảm giá |
+| promotions, product_promotion_rules, order_promotion_rules, vouchers | Mỗi chương trình có một type PRODUCT/ORDER/VOUCHER; khóa ngoại ghép chặn điều kiện sai loại; đơn vẫn kết hợp chương trình khác nhau |
 | promotion_usage | Sổ từng áp dụng điều kiện; trigger từ order_discounts, không mất dấu khi sửa đơn chờ; FK ngăn xóa cấu hình đã dùng |
 | orders, order_items, order_discounts, order_status_history | Snapshot giao dịch và lịch sử trạng thái; sửa hồ sơ không đổi giao dịch cũ |
 | voucher_redemptions | HELD khi đặt, USED khi xác nhận, RELEASED khi hủy hợp lệ; giữ lượt có khóa đồng thời |
@@ -95,3 +95,5 @@ Các view `api_*` tổng hợp cấu trúc trả cho API, loại bỏ hash/token
 Cài mới bằng migration hoặc bản xuất schema, chọn một cách. Schema có baseline `pgmigrations` để những migration cũ không chạy lại. Chỉ tạo roles/permissions hệ thống; tài khoản quản trị được tạo bằng lệnh bootstrap riêng.
 
 Database đang dùng phải nâng cấp bằng migration mới, không sửa file đã áp dụng và không nhập lại toàn schema. `db:verify-schema` tạo hai database thử riêng, đối chiếu bảng/view/sequence/ràng buộc và kiểm tra không áp dụng lại migration sau import. Chi tiết chạy, backup và restore có trong README.
+
+Migration 008 tách cấu hình nhiều loại cũ thành chương trình riêng mà không sửa orders, order_items, order_discounts, voucher_redemptions hay promotion_usage. Điều kiện/voucher giữ UUID và lượt dùng; các tham chiếu trên đơn cũ vẫn trỏ về chương trình lịch sử. View `api_promotions` tính `has_usage` theo cả ledger gốc và cha hiện tại của điều kiện, đồng thời trả `type` và `has_conditions`. Bản xuất schema hiện gồm đủ 8 migration.

@@ -149,7 +149,7 @@ Database cần có đúng một admin đã bootstrap và admin đang hoạt đ�
 - 3 nhà cung cấp và quan hệ cung ứng; 3 phiếu nhập đã ghi nhận, 1 phiếu nhập đang soạn.
 - 1 phiếu điều chỉnh đã ghi nhận, tồn kho và lịch sử nhập/xuất/hoàn kho; có SKU tồn thấp.
 - 3 khách hàng, 6 địa chỉ và 3 giỏ hàng có hàng.
-- 2 chương trình khuyến mãi, quy tắc giảm sản phẩm/đơn và voucher `VC01`.
+- 4 chương trình khuyến mãi: `KM01` theo sản phẩm, `KM02` bản nháp theo sản phẩm, `KM03` theo hóa đơn và `KM04` theo voucher `VC01`.
 - 6 đơn hàng gồm chờ xác nhận, đã xác nhận, đang giao, hoàn tất và hai tình huống hủy; 4 khoản thanh toán, 1 hoàn tiền và 1 hóa đơn đã ghi nhận từ đơn hoàn tất.
 
 Nội dung hiển thị không gắn chữ `(mẫu)`, `[Mẫu]` hoặc hậu tố Demo, gồm tên, mô tả, địa chỉ, ghi chú và tên lưu trên giao dịch. Mã nghiệp vụ dùng dạng `SP01`, `SKU01`, `KM01`, `PN01`. Ảnh sản phẩm chưa được thêm; có thể upload ảnh thật qua giao diện. Khuyến mãi có hiệu lực từ 30 ngày trước tới 90 ngày sau thời điểm import đầu tiên. Dữ liệu được lưu thật trong Docker volume và hiển thị qua API; Docker khởi động thông thường không tự nạp seed. Migration `005_clean_display_labels.sql` làm sạch nội dung đã nạp, giữ nguyên username, email, mật khẩu, mã, số tiền và tồn kho.
@@ -316,13 +316,13 @@ Build/ký APK, cài thiết bị và nghiệm thu trọn luồng cần tài kho�
 
 ## Khuyến mãi và voucher
 
-Trong **Khuyến mãi**, tạo chương trình rồi mở chi tiết để quản lý ba tab: **theo sản phẩm**, **theo hóa đơn**, **theo voucher**. Mỗi tab cho thêm/sửa/xóa điều kiện, tìm mã và phân trang. Danh sách chương trình lọc theo mã/tên, trạng thái, khoảng hiệu lực và sản phẩm. Mã điều kiện tự sinh KMSP01/KMHD01; voucher dùng VC01…
+Trong **Khuyến mãi**, khi tạo chương trình phải chọn đúng một **Loại khuyến mãi**: **theo sản phẩm**, **theo hóa đơn** hoặc **theo voucher**. Trang chi tiết chỉ hiện phần điều kiện của loại đã chọn, cho thêm/sửa/xóa, tìm mã và phân trang. Chỉ đổi loại khi chương trình chưa có điều kiện, chưa từng dùng và chưa kết thúc. Danh sách chương trình lọc theo mã/tên, loại khuyến mãi, trạng thái, khoảng hiệu lực và sản phẩm. Mã điều kiện tự sinh KMSP01/KMHD01; voucher dùng VC01…
 
-Backend chọn một ưu đãi sản phẩm tốt nhất trên mỗi dòng, một ưu đãi hóa đơn tốt nhất trên tiền hàng còn lại, sau đó một voucher. Phí giao hàng không được giảm. Trần bỏ trống là không giới hạn; trần bằng 0 giảm 0 đồng. Phần trăm trong 0–100, ngưỡng/giới hạn không âm. Đơn cũ giữ nguyên tên và tiền giảm đã chốt khi cấu hình được sửa cho đơn mới.
+Một đơn hàng vẫn có thể kết hợp **các chương trình khác nhau**: backend chọn một ưu đãi sản phẩm tốt nhất trên mỗi dòng, một ưu đãi hóa đơn tốt nhất trên tiền hàng còn lại, sau đó một voucher. Mỗi chương trình chỉ đóng góp theo loại của mình. Phí giao hàng không được giảm. Trần bỏ trống là không giới hạn; trần bằng 0 giảm 0 đồng. Phần trăm trong 0–100, ngưỡng/giới hạn không âm. Đơn cũ giữ nguyên tên và tiền giảm đã chốt khi cấu hình được sửa cho đơn mới.
 
 Voucher giữ lượt khi đặt đơn, chuyển sang đã dùng khi xác nhận, trả lượt khi hủy hợp lệ. Giới hạn tổng bỏ trống là không giới hạn; giới hạn 0 không cho dùng. Không hạ giới hạn thấp hơn lượt đang giữ/đã dùng. Ưu đãi từng áp dụng không được xóa; có thể tạm ngừng/kết thúc chương trình. Chương trình đã kết thúc không bật lại.
 
-Migration 007 tự nâng cấu trúc khi chạy Docker, không reset dữ liệu. Không nạp lại dữ liệu kiểm thử để cập nhật tính năng.
+Migration 008 tự nâng cấu trúc khi chạy Docker và tách chương trình cũ có nhiều loại thành các chương trình riêng. Giữ mã chương trình gốc cho loại đầu tiên (ưu tiên sản phẩm, hóa đơn, voucher); các loại còn lại nhận mã KM mới. Giữ UUID điều kiện/voucher, mã voucher, lượt dùng/giữ và toàn bộ snapshot, số tiền, lịch sử giao dịch. Khóa ngoại trong PostgreSQL chặn gắn điều kiện sai loại, kể cả khi ghi SQL trực tiếp. Không reset hoặc nạp lại dữ liệu kiểm thử để cập nhật tính năng.
 
 ## APK Android cục bộ trên máy này
 

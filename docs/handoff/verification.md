@@ -1,5 +1,15 @@
 # Kết quả kiểm chứng bàn giao — 15/10/2026
 
+## Mỗi chương trình khuyến mãi một loại — 17/10/2026
+
+- Theo lựa chọn của người dùng: mỗi chương trình có đúng một type PRODUCT/ORDER/VOUCHER; đơn vẫn kết hợp các chương trình khác nhau. Form tạo bắt buộc chọn loại, danh sách có cột/bộ lọc loại, chi tiết chỉ tải phần điều kiện tương ứng. API, OpenAPI, shared client và khóa ngoại PostgreSQL đồng bộ.
+- Kiểm chứng 29 trường hợp trong 4 suite với database UUID riêng, Chrome và Mailpit thật: lượt toàn bộ có 28 test đạt; test migration được chạy lại riêng và đạt sau khi sửa kỳ vọng SQLSTATE của ON UPDATE RESTRICT thành 23001. Bao gồm chặn điều kiện sai loại, cấm đổi loại khi có điều kiện/đã dùng, cạnh tranh đổi loại/thêm điều kiện, giữ kết hợp các chương trình và chuyển dữ liệu nhiều loại cũ mà không đổi giao dịch. Database thử được dọn sau kiểm tra.
+- Typecheck workspace đạt; image API/admin build thành công. `db:verify-schema` thành công với đủ 8 migration; tái tạo từ điển từ schema thực (43 bảng, 17 view). `docker compose config --quiet` đạt.
+- Đã backup trước khi nâng cấp vào `.local/backups/halora-2026-10-17T12-11-06.397Z-3d4aa0d5.dump`. Migration 008 đã chạy thật trên Docker: KM01 PRODUCT, KM02 bản nháp PRODUCT, KM03 ORDER, KM04 VOUCHER. VC01 giữ mã/UUID; lượt HELD=1, USED=3, RELEASED=2. Không nạp lại seed.
+- Đối chiếu số dòng và hash toàn bộ bản ghi trước/sau migration: orders, order_items, order_discounts, voucher_redemptions, promotion_usage, stock_movements, inventory_balances, invoices, invoice_items giữ nguyên. Không có điều kiện thuộc sai loại chương trình.
+- `db`, `api`, `admin`, `mailpit` healthy; `migrate` exit 0; ready qua Nginx trả 200. PostgreSQL trở lại mạng nội bộ Compose, web tại http://localhost:8081. Chrome đăng nhập thật, mở từng KM01/KM03/KM04, xác nhận chỉ một phần cấu hình đúng loại, VC01 còn nguyên; form tạo có đủ ba lựa chọn độc lập, không có exception. Ảnh cục bộ `.local/promotion-type-{product,order,voucher,create}-runtime.png`.
+- Không build/cài lại APK trong thay đổi này: API báo giá và luồng khách hàng giữ nguyên; APK đã cài ở lượt nghiệm thu Android bên dưới tiếp tục dùng backend mới.
+
 ## Khởi động máy ảo Android — 17/10/2026
 
 Máy ảo API 37 xuất hiện ở adb dưới trạng thái offline trong các lượt mở từ IDE. Quan sát thực tế: IDE đang index monorepo, chiếm khoảng 2.3 GB RAM và nhiều CPU; system image yêu cầu 4 GB RAM dù cấu hình AVD đặt 2 GB. Tại một lượt kiểm tra trước đó host chỉ còn khoảng 450 MB RAM. Đây là các yếu tố gây áp lực tài nguyên; chưa xác định một nguyên nhân duy nhất cho mọi lần offline.

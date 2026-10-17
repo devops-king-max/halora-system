@@ -485,6 +485,7 @@ CREATE TABLE public.order_promotion_rules (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     version integer DEFAULT 1 NOT NULL,
     code text DEFAULT public.halora_code('KMHD'::text) NOT NULL,
+    promotion_type text GENERATED ALWAYS AS ('ORDER'::text) STORED,
     CONSTRAINT order_promotion_rules_code_check CHECK ((code ~ '^KMHD[0-9]{2,}$'::text))
 );
 
@@ -662,6 +663,7 @@ CREATE TABLE public.product_promotion_rules (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     version integer DEFAULT 1 NOT NULL,
     code text DEFAULT public.halora_code('KMSP'::text) NOT NULL,
+    promotion_type text GENERATED ALWAYS AS ('PRODUCT'::text) STORED,
     CONSTRAINT product_promotion_rules_code_check CHECK ((code ~ '^KMSP[0-9]{2,}$'::text)),
     CONSTRAINT product_promotion_rules_min_quantity_check CHECK ((min_quantity >= 0))
 );
@@ -733,9 +735,36 @@ CREATE TABLE public.promotions (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     version integer DEFAULT 1 NOT NULL,
+    type text NOT NULL,
     CONSTRAINT promotions_business_code_format CHECK ((code ~ '^KM[0-9]{2,}$'::text)),
     CONSTRAINT promotions_check CHECK ((starts_at <= ends_at)),
-    CONSTRAINT promotions_status_check CHECK ((status = ANY (ARRAY['DRAFT'::text, 'ACTIVE'::text, 'PAUSED'::text, 'ENDED'::text])))
+    CONSTRAINT promotions_status_check CHECK ((status = ANY (ARRAY['DRAFT'::text, 'ACTIVE'::text, 'PAUSED'::text, 'ENDED'::text]))),
+    CONSTRAINT promotions_type_check CHECK ((type = ANY (ARRAY['PRODUCT'::text, 'ORDER'::text, 'VOUCHER'::text])))
+);
+
+
+--
+-- Name: vouchers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.vouchers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    promotion_id uuid NOT NULL,
+    code text DEFAULT public.halora_code('VC'::text) NOT NULL,
+    discount_percent public.discount_percent NOT NULL,
+    min_order_amount public.money_vnd NOT NULL,
+    max_discount_amount public.money_vnd,
+    max_uses integer,
+    per_customer_limit integer NOT NULL,
+    status text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    promotion_type text GENERATED ALWAYS AS ('VOUCHER'::text) STORED,
+    CONSTRAINT vouchers_business_code_format CHECK ((code ~ '^VC[0-9]{2,}$'::text)),
+    CONSTRAINT vouchers_max_uses_check CHECK ((max_uses >= 0)),
+    CONSTRAINT vouchers_per_customer_limit_check CHECK ((per_customer_limit >= 0)),
+    CONSTRAINT vouchers_status_check CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'INACTIVE'::text])))
 );
 
 
@@ -755,8 +784,23 @@ CREATE VIEW public.api_promotions AS
     updated_at,
     version,
     (EXISTS ( SELECT 1
-           FROM public.promotion_usage u
-          WHERE (u.promotion_id = p.id))) AS has_usage
+           FROM (((public.promotion_usage u
+             LEFT JOIN public.product_promotion_rules pr ON ((pr.id = u.product_rule_id)))
+             LEFT JOIN public.order_promotion_rules r ON ((r.id = u.order_rule_id)))
+             LEFT JOIN public.vouchers v ON ((v.id = u.voucher_id)))
+          WHERE ((u.promotion_id = p.id) OR (pr.promotion_id = p.id) OR (r.promotion_id = p.id) OR (v.promotion_id = p.id)))) AS has_usage,
+    type,
+    (EXISTS ( SELECT 1
+           FROM public.product_promotion_rules
+          WHERE (product_promotion_rules.promotion_id = p.id)
+        UNION ALL
+         SELECT 1
+           FROM public.order_promotion_rules
+          WHERE (order_promotion_rules.promotion_id = p.id)
+        UNION ALL
+         SELECT 1
+           FROM public.vouchers
+          WHERE (vouchers.promotion_id = p.id))) AS has_conditions
    FROM public.promotions p;
 
 
@@ -918,30 +962,6 @@ CREATE TABLE public.voucher_redemptions (
     status text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT voucher_redemptions_status_check CHECK ((status = ANY (ARRAY['HELD'::text, 'USED'::text, 'RELEASED'::text])))
-);
-
-
---
--- Name: vouchers; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.vouchers (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    promotion_id uuid NOT NULL,
-    code text DEFAULT public.halora_code('VC'::text) NOT NULL,
-    discount_percent public.discount_percent NOT NULL,
-    min_order_amount public.money_vnd NOT NULL,
-    max_discount_amount public.money_vnd,
-    max_uses integer,
-    per_customer_limit integer NOT NULL,
-    status text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    version integer DEFAULT 1 NOT NULL,
-    CONSTRAINT vouchers_business_code_format CHECK ((code ~ '^VC[0-9]{2,}$'::text)),
-    CONSTRAINT vouchers_max_uses_check CHECK ((max_uses >= 0)),
-    CONSTRAINT vouchers_per_customer_limit_check CHECK ((per_customer_limit >= 0)),
-    CONSTRAINT vouchers_status_check CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'INACTIVE'::text])))
 );
 
 
@@ -1913,6 +1933,14 @@ ALTER TABLE ONLY public.promotions
 
 
 --
+-- Name: promotions promotions_id_type_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.promotions
+    ADD CONSTRAINT promotions_id_type_unique UNIQUE (id, type);
+
+
+--
 -- Name: promotions promotions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2770,6 +2798,14 @@ ALTER TABLE ONLY public.order_promotion_rules
 
 
 --
+-- Name: order_promotion_rules order_rules_promotion_type_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_promotion_rules
+    ADD CONSTRAINT order_rules_promotion_type_fk FOREIGN KEY (promotion_id, promotion_type) REFERENCES public.promotions(id, type) ON UPDATE RESTRICT ON DELETE RESTRICT;
+
+
+--
 -- Name: order_status_history order_status_history_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2863,6 +2899,14 @@ ALTER TABLE ONLY public.product_promotion_rules
 
 ALTER TABLE ONLY public.product_promotion_rules
     ADD CONSTRAINT product_promotion_rules_promotion_id_fkey FOREIGN KEY (promotion_id) REFERENCES public.promotions(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: product_promotion_rules product_rules_promotion_type_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_promotion_rules
+    ADD CONSTRAINT product_rules_promotion_type_fk FOREIGN KEY (promotion_id, promotion_type) REFERENCES public.promotions(id, type) ON UPDATE RESTRICT ON DELETE RESTRICT;
 
 
 --
@@ -3034,6 +3078,14 @@ ALTER TABLE ONLY public.vouchers
 
 
 --
+-- Name: vouchers vouchers_promotion_type_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vouchers
+    ADD CONSTRAINT vouchers_promotion_type_fk FOREIGN KEY (promotion_id, promotion_type) REFERENCES public.promotions(id, type) ON UPDATE RESTRICT ON DELETE RESTRICT;
+
+
+--
 -- PostgreSQL database dump complete
 --
 
@@ -3086,242 +3138,243 @@ INSERT INTO public.business_code_counters VALUES ('KMHD', 0);
 -- Data for Name: permissions; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.permissions VALUES ('010d6ee8-05f6-47aa-8a45-1174ec47baa7', 'categories.read', 'categories.read', 'Quyền hệ thống Halora: categories.read');
-INSERT INTO public.permissions VALUES ('1d6cd36e-631b-41df-97a1-723cb2ddc85f', 'categories.create', 'categories.create', 'Quyền hệ thống Halora: categories.create');
-INSERT INTO public.permissions VALUES ('a5b308f3-4503-4d45-a465-71e307500ca6', 'categories.update', 'categories.update', 'Quyền hệ thống Halora: categories.update');
-INSERT INTO public.permissions VALUES ('0736f4cf-0961-481e-be7b-db8f3acbd77c', 'categories.delete', 'categories.delete', 'Quyền hệ thống Halora: categories.delete');
-INSERT INTO public.permissions VALUES ('c4f01264-2b3c-4704-9c8d-bbbf869f7e05', 'brands.read', 'brands.read', 'Quyền hệ thống Halora: brands.read');
-INSERT INTO public.permissions VALUES ('cea779a3-ebb5-456d-ae48-ad8e00da8b7e', 'brands.create', 'brands.create', 'Quyền hệ thống Halora: brands.create');
-INSERT INTO public.permissions VALUES ('5fa14288-0c51-4637-85ca-c294d3d88f4c', 'brands.update', 'brands.update', 'Quyền hệ thống Halora: brands.update');
-INSERT INTO public.permissions VALUES ('cfcf3ba9-c51d-4388-9621-db6ac2041d81', 'brands.delete', 'brands.delete', 'Quyền hệ thống Halora: brands.delete');
-INSERT INTO public.permissions VALUES ('a91386c2-4cef-4c7b-a2fe-5bd0c89daf2d', 'products.read', 'products.read', 'Quyền hệ thống Halora: products.read');
-INSERT INTO public.permissions VALUES ('33c2903c-98fc-4703-ae35-f95682421994', 'products.create', 'products.create', 'Quyền hệ thống Halora: products.create');
-INSERT INTO public.permissions VALUES ('f6b8f68c-6aca-4850-beb1-84dce5e42cd8', 'products.update', 'products.update', 'Quyền hệ thống Halora: products.update');
-INSERT INTO public.permissions VALUES ('ce258a47-1ea1-46aa-8900-5ca1d2ed4929', 'products.delete', 'products.delete', 'Quyền hệ thống Halora: products.delete');
-INSERT INTO public.permissions VALUES ('3c7b4436-7564-4878-b182-644f910fc1ad', 'customers.read', 'customers.read', 'Quyền hệ thống Halora: customers.read');
-INSERT INTO public.permissions VALUES ('781fe2db-edca-4d75-8dc4-e2b4220a1b9f', 'customers.update', 'customers.update', 'Quyền hệ thống Halora: customers.update');
-INSERT INTO public.permissions VALUES ('1db4dbe9-aa23-45e3-9828-8b3ff0963d48', 'customers.delete', 'customers.delete', 'Quyền hệ thống Halora: customers.delete');
-INSERT INTO public.permissions VALUES ('0fc06bca-eb47-4f8b-8535-d0a8ad64dca9', 'employees.read', 'employees.read', 'Quyền hệ thống Halora: employees.read');
-INSERT INTO public.permissions VALUES ('670d136d-d80a-457a-bfdc-c200dd079544', 'employees.create', 'employees.create', 'Quyền hệ thống Halora: employees.create');
-INSERT INTO public.permissions VALUES ('fe550689-0808-4227-a631-4ee8bf80a6b4', 'employees.update', 'employees.update', 'Quyền hệ thống Halora: employees.update');
-INSERT INTO public.permissions VALUES ('e0e4edd4-9718-4c7a-bf7f-cbeac25de426', 'employees.delete', 'employees.delete', 'Quyền hệ thống Halora: employees.delete');
-INSERT INTO public.permissions VALUES ('ac5af378-4bc9-4ab1-a359-de881bb1b3f5', 'employees.createAccount', 'employees.createAccount', 'Quyền hệ thống Halora: employees.createAccount');
-INSERT INTO public.permissions VALUES ('0c224221-2661-4fff-abe1-b71d501ae3c5', 'employees.assignRoles', 'employees.assignRoles', 'Quyền hệ thống Halora: employees.assignRoles');
-INSERT INTO public.permissions VALUES ('58a5654d-d279-4947-9c83-76b7bcd6eb7a', 'accounts.read', 'accounts.read', 'Quyền hệ thống Halora: accounts.read');
-INSERT INTO public.permissions VALUES ('81b8de81-131c-4afa-bd6b-0cf04ce52ebc', 'accounts.update', 'accounts.update', 'Quyền hệ thống Halora: accounts.update');
-INSERT INTO public.permissions VALUES ('8673d1c0-cb59-4c39-a5eb-6f598176b85e', 'roles.read', 'roles.read', 'Quyền hệ thống Halora: roles.read');
-INSERT INTO public.permissions VALUES ('e9f7f96e-1aae-475f-8e2e-d570959074a6', 'permissions.read', 'permissions.read', 'Quyền hệ thống Halora: permissions.read');
-INSERT INTO public.permissions VALUES ('76dafc2a-8b7a-4f20-ab55-3e6fe540d789', 'suppliers.read', 'suppliers.read', 'Quyền hệ thống Halora: suppliers.read');
-INSERT INTO public.permissions VALUES ('ca717cf5-b561-4c49-a002-8cf0496cccbd', 'suppliers.create', 'suppliers.create', 'Quyền hệ thống Halora: suppliers.create');
-INSERT INTO public.permissions VALUES ('9a29d277-20ff-4799-adf9-693a0183b585', 'suppliers.update', 'suppliers.update', 'Quyền hệ thống Halora: suppliers.update');
-INSERT INTO public.permissions VALUES ('06f25814-99a1-46aa-8a6b-afb68b558144', 'suppliers.delete', 'suppliers.delete', 'Quyền hệ thống Halora: suppliers.delete');
-INSERT INTO public.permissions VALUES ('e16d68b6-d45e-43e8-9fb8-c0e935521303', 'promotions.read', 'promotions.read', 'Quyền hệ thống Halora: promotions.read');
-INSERT INTO public.permissions VALUES ('aa28a62f-803b-4574-b2b8-199327550322', 'promotions.create', 'promotions.create', 'Quyền hệ thống Halora: promotions.create');
-INSERT INTO public.permissions VALUES ('eb319fd1-1cad-4a92-a964-48f3ab7be604', 'promotions.update', 'promotions.update', 'Quyền hệ thống Halora: promotions.update');
-INSERT INTO public.permissions VALUES ('763b99b7-1209-4e04-873b-b87ad416a63b', 'promotions.delete', 'promotions.delete', 'Quyền hệ thống Halora: promotions.delete');
-INSERT INTO public.permissions VALUES ('8e1f4f9a-52b8-435c-8026-97b49bec4d83', 'orders.read', 'orders.read', 'Quyền hệ thống Halora: orders.read');
-INSERT INTO public.permissions VALUES ('9ceb8190-ca39-4c51-8d2f-8a9e93136edd', 'orders.confirm', 'orders.confirm', 'Quyền hệ thống Halora: orders.confirm');
-INSERT INTO public.permissions VALUES ('fbb2d0e0-8fb6-4186-8a8e-20c5c21c05cf', 'orders.dispatch', 'orders.dispatch', 'Quyền hệ thống Halora: orders.dispatch');
-INSERT INTO public.permissions VALUES ('9a681d91-3dc2-4075-a811-593fcf199e75', 'orders.complete', 'orders.complete', 'Quyền hệ thống Halora: orders.complete');
-INSERT INTO public.permissions VALUES ('30658153-f26a-4422-bca6-c4f63be29d0d', 'orders.cancel', 'orders.cancel', 'Quyền hệ thống Halora: orders.cancel');
-INSERT INTO public.permissions VALUES ('df5677df-5a41-4f3a-9afc-f3fdb35c71a9', 'payments.create', 'payments.create', 'Quyền hệ thống Halora: payments.create');
-INSERT INTO public.permissions VALUES ('afe57c11-2f54-4e1a-b19a-be5148afd535', 'payments.confirm', 'payments.confirm', 'Quyền hệ thống Halora: payments.confirm');
-INSERT INTO public.permissions VALUES ('87618a40-46b7-4bd9-b7da-b7362a2a093a', 'payments.fail', 'payments.fail', 'Quyền hệ thống Halora: payments.fail');
-INSERT INTO public.permissions VALUES ('58140960-b970-45a4-b64d-408f54702511', 'refunds.confirm', 'refunds.confirm', 'Quyền hệ thống Halora: refunds.confirm');
-INSERT INTO public.permissions VALUES ('42147923-1608-4b91-9cc4-9b24af5c482d', 'refunds.fail', 'refunds.fail', 'Quyền hệ thống Halora: refunds.fail');
-INSERT INTO public.permissions VALUES ('7a7f9236-ac1e-44ab-bfcf-870a08a1e644', 'invoices.read', 'invoices.read', 'Quyền hệ thống Halora: invoices.read');
-INSERT INTO public.permissions VALUES ('57664f4a-d7a4-448d-ba51-d1750ac5287b', 'invoices.create', 'invoices.create', 'Quyền hệ thống Halora: invoices.create');
-INSERT INTO public.permissions VALUES ('005331de-421a-4941-af33-872c9ec5b1fb', 'invoices.update', 'invoices.update', 'Quyền hệ thống Halora: invoices.update');
-INSERT INTO public.permissions VALUES ('d69f2832-4ffe-4378-a31a-a702f7b9240a', 'invoices.delete', 'invoices.delete', 'Quyền hệ thống Halora: invoices.delete');
-INSERT INTO public.permissions VALUES ('a729df13-b132-4904-a1c1-a05ec8049e96', 'invoices.post', 'invoices.post', 'Quyền hệ thống Halora: invoices.post');
-INSERT INTO public.permissions VALUES ('3001d129-2dd0-4deb-a6d8-35b8f6f62c28', 'invoices.export', 'invoices.export', 'Quyền hệ thống Halora: invoices.export');
-INSERT INTO public.permissions VALUES ('22c6dfd1-fdd8-44c0-8a76-acc5954f0d47', 'goodsReceipts.read', 'goodsReceipts.read', 'Quyền hệ thống Halora: goodsReceipts.read');
-INSERT INTO public.permissions VALUES ('c4255d6d-ac40-4acc-868f-3aa6ca4c6d2b', 'goodsReceipts.create', 'goodsReceipts.create', 'Quyền hệ thống Halora: goodsReceipts.create');
-INSERT INTO public.permissions VALUES ('48dc6ee0-ba05-43a2-9527-6aa6cae7b2d1', 'goodsReceipts.update', 'goodsReceipts.update', 'Quyền hệ thống Halora: goodsReceipts.update');
-INSERT INTO public.permissions VALUES ('d72b7241-0c76-45e3-b76f-a4ac26055cc9', 'goodsReceipts.delete', 'goodsReceipts.delete', 'Quyền hệ thống Halora: goodsReceipts.delete');
-INSERT INTO public.permissions VALUES ('e5632431-3a9f-4c50-96b0-dae617a0e13a', 'goodsReceipts.post', 'goodsReceipts.post', 'Quyền hệ thống Halora: goodsReceipts.post');
-INSERT INTO public.permissions VALUES ('cba3777e-10ad-4428-b073-d7ef006684cd', 'goodsReceipts.export', 'goodsReceipts.export', 'Quyền hệ thống Halora: goodsReceipts.export');
-INSERT INTO public.permissions VALUES ('b52b064f-7f7d-40b1-bd61-b01cd0424343', 'inventory.read', 'inventory.read', 'Quyền hệ thống Halora: inventory.read');
-INSERT INTO public.permissions VALUES ('0916f10a-7b07-40eb-9d0d-4a81a485135b', 'inventoryAdjustments.read', 'inventoryAdjustments.read', 'Quyền hệ thống Halora: inventoryAdjustments.read');
-INSERT INTO public.permissions VALUES ('0dca1b8f-d4bc-411b-8b44-04e0cd5f79be', 'inventoryAdjustments.create', 'inventoryAdjustments.create', 'Quyền hệ thống Halora: inventoryAdjustments.create');
-INSERT INTO public.permissions VALUES ('a268bbfd-e250-417d-9a68-7fcdcace10a0', 'inventoryAdjustments.update', 'inventoryAdjustments.update', 'Quyền hệ thống Halora: inventoryAdjustments.update');
-INSERT INTO public.permissions VALUES ('ef4f549f-19da-44a3-9efe-cf26e87538fc', 'inventoryAdjustments.delete', 'inventoryAdjustments.delete', 'Quyền hệ thống Halora: inventoryAdjustments.delete');
-INSERT INTO public.permissions VALUES ('f88c55a0-c4de-4870-a6df-d34bfe5edc54', 'inventoryAdjustments.post', 'inventoryAdjustments.post', 'Quyền hệ thống Halora: inventoryAdjustments.post');
-INSERT INTO public.permissions VALUES ('1970b0d9-cf4d-4dad-b92d-fe55eb8d518a', 'reports.read', 'reports.read', 'Quyền hệ thống Halora: reports.read');
-INSERT INTO public.permissions VALUES ('76b82b3d-aced-4a5e-8b6d-e3cce292331d', 'reports.export', 'reports.export', 'Quyền hệ thống Halora: reports.export');
-INSERT INTO public.permissions VALUES ('32865a97-5d72-4552-871b-d5cb1755c4db', 'media.create', 'media.create', 'Quyền hệ thống Halora: media.create');
+INSERT INTO public.permissions VALUES ('d17cd069-c73c-496f-9f82-2546b205a3db', 'categories.read', 'categories.read', 'Quyền hệ thống Halora: categories.read');
+INSERT INTO public.permissions VALUES ('46a1474d-4c39-4cab-baa8-39f27c856d86', 'categories.create', 'categories.create', 'Quyền hệ thống Halora: categories.create');
+INSERT INTO public.permissions VALUES ('22503f83-2117-417e-a6c5-a46b69eb8af4', 'categories.update', 'categories.update', 'Quyền hệ thống Halora: categories.update');
+INSERT INTO public.permissions VALUES ('deea4b17-613a-44fe-ac56-4479f55bd688', 'categories.delete', 'categories.delete', 'Quyền hệ thống Halora: categories.delete');
+INSERT INTO public.permissions VALUES ('030b75ee-7c23-4737-be43-fc987fd75fc9', 'brands.read', 'brands.read', 'Quyền hệ thống Halora: brands.read');
+INSERT INTO public.permissions VALUES ('68e216bd-80bc-4a0f-92ce-186b5678308a', 'brands.create', 'brands.create', 'Quyền hệ thống Halora: brands.create');
+INSERT INTO public.permissions VALUES ('01b928e4-87f3-4f26-9d66-bb4cfaeff7be', 'brands.update', 'brands.update', 'Quyền hệ thống Halora: brands.update');
+INSERT INTO public.permissions VALUES ('2964c189-5657-43d4-ae98-fc78006ae445', 'brands.delete', 'brands.delete', 'Quyền hệ thống Halora: brands.delete');
+INSERT INTO public.permissions VALUES ('72f16bba-70bb-4877-a498-2ba6d8b815a8', 'products.read', 'products.read', 'Quyền hệ thống Halora: products.read');
+INSERT INTO public.permissions VALUES ('4de291e8-138f-469e-b95e-f411dc710690', 'products.create', 'products.create', 'Quyền hệ thống Halora: products.create');
+INSERT INTO public.permissions VALUES ('f2f1d65e-9ef8-46f9-8328-934f9ee4ae6f', 'products.update', 'products.update', 'Quyền hệ thống Halora: products.update');
+INSERT INTO public.permissions VALUES ('bc648d67-04eb-4368-b631-2090d13ca093', 'products.delete', 'products.delete', 'Quyền hệ thống Halora: products.delete');
+INSERT INTO public.permissions VALUES ('199f77e3-e0ae-4f6e-bfb7-3f61eebc0f1b', 'customers.read', 'customers.read', 'Quyền hệ thống Halora: customers.read');
+INSERT INTO public.permissions VALUES ('21ace77f-1f0a-47f6-97f2-80c1bd56852d', 'customers.update', 'customers.update', 'Quyền hệ thống Halora: customers.update');
+INSERT INTO public.permissions VALUES ('cf7f20ce-e150-42e3-a9d7-1e13f9ce42c6', 'customers.delete', 'customers.delete', 'Quyền hệ thống Halora: customers.delete');
+INSERT INTO public.permissions VALUES ('e9b28f23-e906-4deb-b31d-d0253b268047', 'employees.read', 'employees.read', 'Quyền hệ thống Halora: employees.read');
+INSERT INTO public.permissions VALUES ('1d2cdfdb-988f-437b-ba72-5c9b2f11a797', 'employees.create', 'employees.create', 'Quyền hệ thống Halora: employees.create');
+INSERT INTO public.permissions VALUES ('7dd15781-3dde-4116-9f40-c27847dcd0ed', 'employees.update', 'employees.update', 'Quyền hệ thống Halora: employees.update');
+INSERT INTO public.permissions VALUES ('f66ee100-36fc-4fbf-aedd-27402b3b4326', 'employees.delete', 'employees.delete', 'Quyền hệ thống Halora: employees.delete');
+INSERT INTO public.permissions VALUES ('af3216c7-1758-4217-ba2b-3243c5fb08b9', 'employees.createAccount', 'employees.createAccount', 'Quyền hệ thống Halora: employees.createAccount');
+INSERT INTO public.permissions VALUES ('2bc99b61-a734-46cc-a083-a8bfb5787a36', 'employees.assignRoles', 'employees.assignRoles', 'Quyền hệ thống Halora: employees.assignRoles');
+INSERT INTO public.permissions VALUES ('45c34bd7-33d7-40f9-aff5-1efb0a7c0fd7', 'accounts.read', 'accounts.read', 'Quyền hệ thống Halora: accounts.read');
+INSERT INTO public.permissions VALUES ('ee0419a5-77f9-41dc-88e3-9111ba58fa8d', 'accounts.update', 'accounts.update', 'Quyền hệ thống Halora: accounts.update');
+INSERT INTO public.permissions VALUES ('ae2dcc52-bdc2-40b9-89bd-754d28f9c455', 'roles.read', 'roles.read', 'Quyền hệ thống Halora: roles.read');
+INSERT INTO public.permissions VALUES ('70aa4e2d-c58d-42c7-a20f-58cb1c7bfb19', 'permissions.read', 'permissions.read', 'Quyền hệ thống Halora: permissions.read');
+INSERT INTO public.permissions VALUES ('0f63e6c3-af84-467d-bf8c-0e64684c9c25', 'suppliers.read', 'suppliers.read', 'Quyền hệ thống Halora: suppliers.read');
+INSERT INTO public.permissions VALUES ('fd7318dd-4402-421b-86f3-eb16c79fa710', 'suppliers.create', 'suppliers.create', 'Quyền hệ thống Halora: suppliers.create');
+INSERT INTO public.permissions VALUES ('3854fd20-37ad-413a-8308-9236d9495828', 'suppliers.update', 'suppliers.update', 'Quyền hệ thống Halora: suppliers.update');
+INSERT INTO public.permissions VALUES ('a014d50c-bc3d-4a83-97ff-6929b49c7d14', 'suppliers.delete', 'suppliers.delete', 'Quyền hệ thống Halora: suppliers.delete');
+INSERT INTO public.permissions VALUES ('dcfeed77-686e-41ef-8481-8ce635b12662', 'promotions.read', 'promotions.read', 'Quyền hệ thống Halora: promotions.read');
+INSERT INTO public.permissions VALUES ('8b4fc1ec-368f-487c-8de3-556d5704f17f', 'promotions.create', 'promotions.create', 'Quyền hệ thống Halora: promotions.create');
+INSERT INTO public.permissions VALUES ('7bcd9265-12cd-488d-80c9-e2e364e85211', 'promotions.update', 'promotions.update', 'Quyền hệ thống Halora: promotions.update');
+INSERT INTO public.permissions VALUES ('542e93c2-be16-4e7e-94f0-da8f9dbbd549', 'promotions.delete', 'promotions.delete', 'Quyền hệ thống Halora: promotions.delete');
+INSERT INTO public.permissions VALUES ('6a9a04ee-4c7b-4fa7-9467-3adcce77d1ee', 'orders.read', 'orders.read', 'Quyền hệ thống Halora: orders.read');
+INSERT INTO public.permissions VALUES ('55d5c3ac-6fcf-42ea-bd51-95ba57c721c8', 'orders.confirm', 'orders.confirm', 'Quyền hệ thống Halora: orders.confirm');
+INSERT INTO public.permissions VALUES ('7cfd4dd5-3b16-46d2-9e62-6ba26e988b43', 'orders.dispatch', 'orders.dispatch', 'Quyền hệ thống Halora: orders.dispatch');
+INSERT INTO public.permissions VALUES ('79dc90b8-b743-43f0-bae6-9a2f8f12f90d', 'orders.complete', 'orders.complete', 'Quyền hệ thống Halora: orders.complete');
+INSERT INTO public.permissions VALUES ('fda3eb28-4dda-4f82-80f5-63545c940a84', 'orders.cancel', 'orders.cancel', 'Quyền hệ thống Halora: orders.cancel');
+INSERT INTO public.permissions VALUES ('86d51017-27b1-4942-9432-12719325b1bd', 'payments.create', 'payments.create', 'Quyền hệ thống Halora: payments.create');
+INSERT INTO public.permissions VALUES ('39cec04d-4067-47ec-a577-7b708ea6046e', 'payments.confirm', 'payments.confirm', 'Quyền hệ thống Halora: payments.confirm');
+INSERT INTO public.permissions VALUES ('f05df2d7-cf98-4c75-b05e-665b31983215', 'payments.fail', 'payments.fail', 'Quyền hệ thống Halora: payments.fail');
+INSERT INTO public.permissions VALUES ('cedf437c-ff68-4c29-a6a2-b676296b61c1', 'refunds.confirm', 'refunds.confirm', 'Quyền hệ thống Halora: refunds.confirm');
+INSERT INTO public.permissions VALUES ('b85e7183-939a-462d-aa62-436134edf420', 'refunds.fail', 'refunds.fail', 'Quyền hệ thống Halora: refunds.fail');
+INSERT INTO public.permissions VALUES ('0529b0bd-731e-4b05-98ce-50363c467950', 'invoices.read', 'invoices.read', 'Quyền hệ thống Halora: invoices.read');
+INSERT INTO public.permissions VALUES ('ed0c980f-dc28-4b98-bdf4-062bc9ee287e', 'invoices.create', 'invoices.create', 'Quyền hệ thống Halora: invoices.create');
+INSERT INTO public.permissions VALUES ('f2c2c7a4-678e-44fc-854e-f5b0ab8ae26c', 'invoices.update', 'invoices.update', 'Quyền hệ thống Halora: invoices.update');
+INSERT INTO public.permissions VALUES ('5836ef78-fc12-4801-83f3-7daf91a79813', 'invoices.delete', 'invoices.delete', 'Quyền hệ thống Halora: invoices.delete');
+INSERT INTO public.permissions VALUES ('58d391f4-fc87-4900-9359-8ccb32197fff', 'invoices.post', 'invoices.post', 'Quyền hệ thống Halora: invoices.post');
+INSERT INTO public.permissions VALUES ('6ecdb2fc-f3d4-449f-a941-b1bb74cf3b33', 'invoices.export', 'invoices.export', 'Quyền hệ thống Halora: invoices.export');
+INSERT INTO public.permissions VALUES ('13e2cfdf-b2ad-4123-b124-1c3eae48756f', 'goodsReceipts.read', 'goodsReceipts.read', 'Quyền hệ thống Halora: goodsReceipts.read');
+INSERT INTO public.permissions VALUES ('8aa9602f-b931-40c7-9da8-068c0bf94e6e', 'goodsReceipts.create', 'goodsReceipts.create', 'Quyền hệ thống Halora: goodsReceipts.create');
+INSERT INTO public.permissions VALUES ('293ed04d-7531-4a0d-95ba-9cdf444cdf48', 'goodsReceipts.update', 'goodsReceipts.update', 'Quyền hệ thống Halora: goodsReceipts.update');
+INSERT INTO public.permissions VALUES ('542e0b60-6257-4cea-b60c-ea0aa13840de', 'goodsReceipts.delete', 'goodsReceipts.delete', 'Quyền hệ thống Halora: goodsReceipts.delete');
+INSERT INTO public.permissions VALUES ('73329ba8-cd3d-465c-a186-07b9fb087703', 'goodsReceipts.post', 'goodsReceipts.post', 'Quyền hệ thống Halora: goodsReceipts.post');
+INSERT INTO public.permissions VALUES ('2c30597f-deb3-4408-8707-a1bb8cf95548', 'goodsReceipts.export', 'goodsReceipts.export', 'Quyền hệ thống Halora: goodsReceipts.export');
+INSERT INTO public.permissions VALUES ('8be0a609-f19d-4572-a5c3-6a4987c76124', 'inventory.read', 'inventory.read', 'Quyền hệ thống Halora: inventory.read');
+INSERT INTO public.permissions VALUES ('848f1ebe-7249-4853-bb7e-c6ad4e6c98ca', 'inventoryAdjustments.read', 'inventoryAdjustments.read', 'Quyền hệ thống Halora: inventoryAdjustments.read');
+INSERT INTO public.permissions VALUES ('e8f57daa-770c-4b43-ae99-40ef04546318', 'inventoryAdjustments.create', 'inventoryAdjustments.create', 'Quyền hệ thống Halora: inventoryAdjustments.create');
+INSERT INTO public.permissions VALUES ('82553b82-8b06-48ba-ab6a-11f94351dbd7', 'inventoryAdjustments.update', 'inventoryAdjustments.update', 'Quyền hệ thống Halora: inventoryAdjustments.update');
+INSERT INTO public.permissions VALUES ('f7d57137-6e1a-4eb2-a17e-d1a7097661d7', 'inventoryAdjustments.delete', 'inventoryAdjustments.delete', 'Quyền hệ thống Halora: inventoryAdjustments.delete');
+INSERT INTO public.permissions VALUES ('de0da37f-c714-4f90-887b-0681883a2849', 'inventoryAdjustments.post', 'inventoryAdjustments.post', 'Quyền hệ thống Halora: inventoryAdjustments.post');
+INSERT INTO public.permissions VALUES ('d2c44dff-9033-461f-bfe3-c4b8071326cd', 'reports.read', 'reports.read', 'Quyền hệ thống Halora: reports.read');
+INSERT INTO public.permissions VALUES ('815a6e29-0f5a-47f9-ba3f-fd9121ede957', 'reports.export', 'reports.export', 'Quyền hệ thống Halora: reports.export');
+INSERT INTO public.permissions VALUES ('643f77a1-7c6d-47ad-9851-8e36f423a221', 'media.create', 'media.create', 'Quyền hệ thống Halora: media.create');
 
 
 --
 -- Data for Name: pgmigrations; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.pgmigrations VALUES (1, '001_initial', '2026-10-17 03:50:04.921494');
-INSERT INTO public.pgmigrations VALUES (2, '002_access_control', '2026-10-17 03:50:04.921494');
-INSERT INTO public.pgmigrations VALUES (3, '003_business_codes', '2026-10-17 03:50:04.921494');
-INSERT INTO public.pgmigrations VALUES (4, '004_fixed_role_permissions', '2026-10-17 03:50:04.921494');
-INSERT INTO public.pgmigrations VALUES (5, '005_clean_display_labels', '2026-10-17 03:50:04.921494');
-INSERT INTO public.pgmigrations VALUES (6, '006_catalog_thumbnails', '2026-10-17 03:50:04.921494');
-INSERT INTO public.pgmigrations VALUES (7, '007_promotion_management', '2026-10-17 03:50:04.921494');
+INSERT INTO public.pgmigrations VALUES (1, '001_initial', '2026-10-17 12:15:20.149555');
+INSERT INTO public.pgmigrations VALUES (2, '002_access_control', '2026-10-17 12:15:20.149555');
+INSERT INTO public.pgmigrations VALUES (3, '003_business_codes', '2026-10-17 12:15:20.149555');
+INSERT INTO public.pgmigrations VALUES (4, '004_fixed_role_permissions', '2026-10-17 12:15:20.149555');
+INSERT INTO public.pgmigrations VALUES (5, '005_clean_display_labels', '2026-10-17 12:15:20.149555');
+INSERT INTO public.pgmigrations VALUES (6, '006_catalog_thumbnails', '2026-10-17 12:15:20.149555');
+INSERT INTO public.pgmigrations VALUES (7, '007_promotion_management', '2026-10-17 12:15:20.149555');
+INSERT INTO public.pgmigrations VALUES (8, '008_single_promotion_type', '2026-10-17 12:15:20.149555');
 
 
 --
 -- Data for Name: roles; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.roles VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'ADMIN', 'Quản trị viên', 'Quản trị toàn bộ hệ thống', '2026-10-17 03:50:04.921494+00', '2026-10-17 03:50:04.921494+00', 1);
-INSERT INTO public.roles VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', 'SALES', 'Bán hàng', 'Quản lý khách hàng và xử lý đơn hàng', '2026-10-17 03:50:04.921494+00', '2026-10-17 03:50:04.921494+00', 1);
-INSERT INTO public.roles VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'WAREHOUSE', 'Kho', 'Quản lý sản phẩm, cung ứng và kho', '2026-10-17 03:50:04.921494+00', '2026-10-17 03:50:04.921494+00', 1);
-INSERT INTO public.roles VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', 'ACCOUNTANT', 'Kế toán', 'Đối soát thanh toán, hóa đơn và báo cáo', '2026-10-17 03:50:04.921494+00', '2026-10-17 03:50:04.921494+00', 1);
-INSERT INTO public.roles VALUES ('f6dcd010-9eef-4055-9057-a47bced50d03', 'CUSTOMER', 'Khách hàng', 'Truy cập dữ liệu cá nhân qua /me', '2026-10-17 03:50:04.921494+00', '2026-10-17 03:50:04.921494+00', 1);
+INSERT INTO public.roles VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', 'ADMIN', 'Quản trị viên', 'Quản trị toàn bộ hệ thống', '2026-10-17 12:15:20.149555+00', '2026-10-17 12:15:20.149555+00', 1);
+INSERT INTO public.roles VALUES ('3b24ffd8-0762-433c-bcbd-3669907b9fbe', 'SALES', 'Bán hàng', 'Quản lý khách hàng và xử lý đơn hàng', '2026-10-17 12:15:20.149555+00', '2026-10-17 12:15:20.149555+00', 1);
+INSERT INTO public.roles VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', 'WAREHOUSE', 'Kho', 'Quản lý sản phẩm, cung ứng và kho', '2026-10-17 12:15:20.149555+00', '2026-10-17 12:15:20.149555+00', 1);
+INSERT INTO public.roles VALUES ('1c857ffd-f890-45a5-ab09-d66ee3f68319', 'ACCOUNTANT', 'Kế toán', 'Đối soát thanh toán, hóa đơn và báo cáo', '2026-10-17 12:15:20.149555+00', '2026-10-17 12:15:20.149555+00', 1);
+INSERT INTO public.roles VALUES ('898577f7-e3df-4f47-955b-367fcc40511b', 'CUSTOMER', 'Khách hàng', 'Truy cập dữ liệu cá nhân qua /me', '2026-10-17 12:15:20.149555+00', '2026-10-17 12:15:20.149555+00', 1);
 
 
 --
 -- Data for Name: role_permissions; Type: TABLE DATA; Schema: public; Owner: -
 --
 
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '010d6ee8-05f6-47aa-8a45-1174ec47baa7');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '1d6cd36e-631b-41df-97a1-723cb2ddc85f');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'a5b308f3-4503-4d45-a465-71e307500ca6');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '0736f4cf-0961-481e-be7b-db8f3acbd77c');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'c4f01264-2b3c-4704-9c8d-bbbf869f7e05');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'cea779a3-ebb5-456d-ae48-ad8e00da8b7e');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '5fa14288-0c51-4637-85ca-c294d3d88f4c');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'cfcf3ba9-c51d-4388-9621-db6ac2041d81');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'a91386c2-4cef-4c7b-a2fe-5bd0c89daf2d');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '33c2903c-98fc-4703-ae35-f95682421994');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'f6b8f68c-6aca-4850-beb1-84dce5e42cd8');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'ce258a47-1ea1-46aa-8900-5ca1d2ed4929');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '3c7b4436-7564-4878-b182-644f910fc1ad');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '781fe2db-edca-4d75-8dc4-e2b4220a1b9f');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '1db4dbe9-aa23-45e3-9828-8b3ff0963d48');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '0fc06bca-eb47-4f8b-8535-d0a8ad64dca9');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '670d136d-d80a-457a-bfdc-c200dd079544');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'fe550689-0808-4227-a631-4ee8bf80a6b4');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'e0e4edd4-9718-4c7a-bf7f-cbeac25de426');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'ac5af378-4bc9-4ab1-a359-de881bb1b3f5');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '0c224221-2661-4fff-abe1-b71d501ae3c5');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '58a5654d-d279-4947-9c83-76b7bcd6eb7a');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '81b8de81-131c-4afa-bd6b-0cf04ce52ebc');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '8673d1c0-cb59-4c39-a5eb-6f598176b85e');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'e9f7f96e-1aae-475f-8e2e-d570959074a6');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '76dafc2a-8b7a-4f20-ab55-3e6fe540d789');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'ca717cf5-b561-4c49-a002-8cf0496cccbd');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '9a29d277-20ff-4799-adf9-693a0183b585');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '06f25814-99a1-46aa-8a6b-afb68b558144');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'e16d68b6-d45e-43e8-9fb8-c0e935521303');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'aa28a62f-803b-4574-b2b8-199327550322');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'eb319fd1-1cad-4a92-a964-48f3ab7be604');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '763b99b7-1209-4e04-873b-b87ad416a63b');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '8e1f4f9a-52b8-435c-8026-97b49bec4d83');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '9ceb8190-ca39-4c51-8d2f-8a9e93136edd');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'fbb2d0e0-8fb6-4186-8a8e-20c5c21c05cf');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '9a681d91-3dc2-4075-a811-593fcf199e75');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '30658153-f26a-4422-bca6-c4f63be29d0d');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'df5677df-5a41-4f3a-9afc-f3fdb35c71a9');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'afe57c11-2f54-4e1a-b19a-be5148afd535');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '87618a40-46b7-4bd9-b7da-b7362a2a093a');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '58140960-b970-45a4-b64d-408f54702511');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '42147923-1608-4b91-9cc4-9b24af5c482d');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '7a7f9236-ac1e-44ab-bfcf-870a08a1e644');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '57664f4a-d7a4-448d-ba51-d1750ac5287b');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '005331de-421a-4941-af33-872c9ec5b1fb');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'd69f2832-4ffe-4378-a31a-a702f7b9240a');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'a729df13-b132-4904-a1c1-a05ec8049e96');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '3001d129-2dd0-4deb-a6d8-35b8f6f62c28');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '22c6dfd1-fdd8-44c0-8a76-acc5954f0d47');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'c4255d6d-ac40-4acc-868f-3aa6ca4c6d2b');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '48dc6ee0-ba05-43a2-9527-6aa6cae7b2d1');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'd72b7241-0c76-45e3-b76f-a4ac26055cc9');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'e5632431-3a9f-4c50-96b0-dae617a0e13a');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'cba3777e-10ad-4428-b073-d7ef006684cd');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'b52b064f-7f7d-40b1-bd61-b01cd0424343');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '0916f10a-7b07-40eb-9d0d-4a81a485135b');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '0dca1b8f-d4bc-411b-8b44-04e0cd5f79be');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'a268bbfd-e250-417d-9a68-7fcdcace10a0');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'ef4f549f-19da-44a3-9efe-cf26e87538fc');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', 'f88c55a0-c4de-4870-a6df-d34bfe5edc54');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '1970b0d9-cf4d-4dad-b92d-fe55eb8d518a');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '76b82b3d-aced-4a5e-8b6d-e3cce292331d');
-INSERT INTO public.role_permissions VALUES ('c7812ee9-cf97-43fe-a58b-1194bd18da52', '32865a97-5d72-4552-871b-d5cb1755c4db');
-INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', '010d6ee8-05f6-47aa-8a45-1174ec47baa7');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '010d6ee8-05f6-47aa-8a45-1174ec47baa7');
-INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '010d6ee8-05f6-47aa-8a45-1174ec47baa7');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '1d6cd36e-631b-41df-97a1-723cb2ddc85f');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'a5b308f3-4503-4d45-a465-71e307500ca6');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '0736f4cf-0961-481e-be7b-db8f3acbd77c');
-INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', 'c4f01264-2b3c-4704-9c8d-bbbf869f7e05');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'c4f01264-2b3c-4704-9c8d-bbbf869f7e05');
-INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', 'c4f01264-2b3c-4704-9c8d-bbbf869f7e05');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'cea779a3-ebb5-456d-ae48-ad8e00da8b7e');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '5fa14288-0c51-4637-85ca-c294d3d88f4c');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'cfcf3ba9-c51d-4388-9621-db6ac2041d81');
-INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', 'a91386c2-4cef-4c7b-a2fe-5bd0c89daf2d');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'a91386c2-4cef-4c7b-a2fe-5bd0c89daf2d');
-INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', 'a91386c2-4cef-4c7b-a2fe-5bd0c89daf2d');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '33c2903c-98fc-4703-ae35-f95682421994');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'f6b8f68c-6aca-4850-beb1-84dce5e42cd8');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'ce258a47-1ea1-46aa-8900-5ca1d2ed4929');
-INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', '3c7b4436-7564-4878-b182-644f910fc1ad');
-INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '3c7b4436-7564-4878-b182-644f910fc1ad');
-INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', '781fe2db-edca-4d75-8dc4-e2b4220a1b9f');
-INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', '1db4dbe9-aa23-45e3-9828-8b3ff0963d48');
-INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '0fc06bca-eb47-4f8b-8535-d0a8ad64dca9');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '76dafc2a-8b7a-4f20-ab55-3e6fe540d789');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'ca717cf5-b561-4c49-a002-8cf0496cccbd');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '9a29d277-20ff-4799-adf9-693a0183b585');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '06f25814-99a1-46aa-8a6b-afb68b558144');
-INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', '8e1f4f9a-52b8-435c-8026-97b49bec4d83');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '8e1f4f9a-52b8-435c-8026-97b49bec4d83');
-INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '8e1f4f9a-52b8-435c-8026-97b49bec4d83');
-INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', '9ceb8190-ca39-4c51-8d2f-8a9e93136edd');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '9ceb8190-ca39-4c51-8d2f-8a9e93136edd');
-INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', 'fbb2d0e0-8fb6-4186-8a8e-20c5c21c05cf');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'fbb2d0e0-8fb6-4186-8a8e-20c5c21c05cf');
-INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', '9a681d91-3dc2-4075-a811-593fcf199e75');
-INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', '30658153-f26a-4422-bca6-c4f63be29d0d');
-INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', 'df5677df-5a41-4f3a-9afc-f3fdb35c71a9');
-INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', 'df5677df-5a41-4f3a-9afc-f3fdb35c71a9');
-INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', 'afe57c11-2f54-4e1a-b19a-be5148afd535');
-INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '87618a40-46b7-4bd9-b7da-b7362a2a093a');
-INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '58140960-b970-45a4-b64d-408f54702511');
-INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '42147923-1608-4b91-9cc4-9b24af5c482d');
-INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', '7a7f9236-ac1e-44ab-bfcf-870a08a1e644');
-INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '7a7f9236-ac1e-44ab-bfcf-870a08a1e644');
-INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', '57664f4a-d7a4-448d-ba51-d1750ac5287b');
-INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '57664f4a-d7a4-448d-ba51-d1750ac5287b');
-INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', '005331de-421a-4941-af33-872c9ec5b1fb');
-INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '005331de-421a-4941-af33-872c9ec5b1fb');
-INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', 'd69f2832-4ffe-4378-a31a-a702f7b9240a');
-INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', 'a729df13-b132-4904-a1c1-a05ec8049e96');
-INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', 'a729df13-b132-4904-a1c1-a05ec8049e96');
-INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', '3001d129-2dd0-4deb-a6d8-35b8f6f62c28');
-INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '3001d129-2dd0-4deb-a6d8-35b8f6f62c28');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '22c6dfd1-fdd8-44c0-8a76-acc5954f0d47');
-INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '22c6dfd1-fdd8-44c0-8a76-acc5954f0d47');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'c4255d6d-ac40-4acc-868f-3aa6ca4c6d2b');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '48dc6ee0-ba05-43a2-9527-6aa6cae7b2d1');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'd72b7241-0c76-45e3-b76f-a4ac26055cc9');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'e5632431-3a9f-4c50-96b0-dae617a0e13a');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'cba3777e-10ad-4428-b073-d7ef006684cd');
-INSERT INTO public.role_permissions VALUES ('5eb62fd1-32c3-46bc-8d36-db73731ebb9d', 'b52b064f-7f7d-40b1-bd61-b01cd0424343');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'b52b064f-7f7d-40b1-bd61-b01cd0424343');
-INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', 'b52b064f-7f7d-40b1-bd61-b01cd0424343');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '0916f10a-7b07-40eb-9d0d-4a81a485135b');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '0dca1b8f-d4bc-411b-8b44-04e0cd5f79be');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'a268bbfd-e250-417d-9a68-7fcdcace10a0');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'ef4f549f-19da-44a3-9efe-cf26e87538fc');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', 'f88c55a0-c4de-4870-a6df-d34bfe5edc54');
-INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '1970b0d9-cf4d-4dad-b92d-fe55eb8d518a');
-INSERT INTO public.role_permissions VALUES ('bf65f6c2-cfe2-458f-8584-41cc4262e16e', '76b82b3d-aced-4a5e-8b6d-e3cce292331d');
-INSERT INTO public.role_permissions VALUES ('a4845dab-d378-41c0-bb58-5a98d41ea8c1', '32865a97-5d72-4552-871b-d5cb1755c4db');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', 'd17cd069-c73c-496f-9f82-2546b205a3db');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '46a1474d-4c39-4cab-baa8-39f27c856d86');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '22503f83-2117-417e-a6c5-a46b69eb8af4');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', 'deea4b17-613a-44fe-ac56-4479f55bd688');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '030b75ee-7c23-4737-be43-fc987fd75fc9');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '68e216bd-80bc-4a0f-92ce-186b5678308a');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '01b928e4-87f3-4f26-9d66-bb4cfaeff7be');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '2964c189-5657-43d4-ae98-fc78006ae445');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '72f16bba-70bb-4877-a498-2ba6d8b815a8');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '4de291e8-138f-469e-b95e-f411dc710690');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', 'f2f1d65e-9ef8-46f9-8328-934f9ee4ae6f');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', 'bc648d67-04eb-4368-b631-2090d13ca093');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '199f77e3-e0ae-4f6e-bfb7-3f61eebc0f1b');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '21ace77f-1f0a-47f6-97f2-80c1bd56852d');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', 'cf7f20ce-e150-42e3-a9d7-1e13f9ce42c6');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', 'e9b28f23-e906-4deb-b31d-d0253b268047');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '1d2cdfdb-988f-437b-ba72-5c9b2f11a797');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '7dd15781-3dde-4116-9f40-c27847dcd0ed');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', 'f66ee100-36fc-4fbf-aedd-27402b3b4326');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', 'af3216c7-1758-4217-ba2b-3243c5fb08b9');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '2bc99b61-a734-46cc-a083-a8bfb5787a36');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '45c34bd7-33d7-40f9-aff5-1efb0a7c0fd7');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', 'ee0419a5-77f9-41dc-88e3-9111ba58fa8d');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', 'ae2dcc52-bdc2-40b9-89bd-754d28f9c455');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '70aa4e2d-c58d-42c7-a20f-58cb1c7bfb19');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '0f63e6c3-af84-467d-bf8c-0e64684c9c25');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', 'fd7318dd-4402-421b-86f3-eb16c79fa710');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '3854fd20-37ad-413a-8308-9236d9495828');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', 'a014d50c-bc3d-4a83-97ff-6929b49c7d14');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', 'dcfeed77-686e-41ef-8481-8ce635b12662');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '8b4fc1ec-368f-487c-8de3-556d5704f17f');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '7bcd9265-12cd-488d-80c9-e2e364e85211');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '542e93c2-be16-4e7e-94f0-da8f9dbbd549');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '6a9a04ee-4c7b-4fa7-9467-3adcce77d1ee');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '55d5c3ac-6fcf-42ea-bd51-95ba57c721c8');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '7cfd4dd5-3b16-46d2-9e62-6ba26e988b43');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '79dc90b8-b743-43f0-bae6-9a2f8f12f90d');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', 'fda3eb28-4dda-4f82-80f5-63545c940a84');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '86d51017-27b1-4942-9432-12719325b1bd');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '39cec04d-4067-47ec-a577-7b708ea6046e');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', 'f05df2d7-cf98-4c75-b05e-665b31983215');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', 'cedf437c-ff68-4c29-a6a2-b676296b61c1');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', 'b85e7183-939a-462d-aa62-436134edf420');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '0529b0bd-731e-4b05-98ce-50363c467950');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', 'ed0c980f-dc28-4b98-bdf4-062bc9ee287e');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', 'f2c2c7a4-678e-44fc-854e-f5b0ab8ae26c');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '5836ef78-fc12-4801-83f3-7daf91a79813');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '58d391f4-fc87-4900-9359-8ccb32197fff');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '6ecdb2fc-f3d4-449f-a941-b1bb74cf3b33');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '13e2cfdf-b2ad-4123-b124-1c3eae48756f');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '8aa9602f-b931-40c7-9da8-068c0bf94e6e');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '293ed04d-7531-4a0d-95ba-9cdf444cdf48');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '542e0b60-6257-4cea-b60c-ea0aa13840de');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '73329ba8-cd3d-465c-a186-07b9fb087703');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '2c30597f-deb3-4408-8707-a1bb8cf95548');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '8be0a609-f19d-4572-a5c3-6a4987c76124');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '848f1ebe-7249-4853-bb7e-c6ad4e6c98ca');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', 'e8f57daa-770c-4b43-ae99-40ef04546318');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '82553b82-8b06-48ba-ab6a-11f94351dbd7');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', 'f7d57137-6e1a-4eb2-a17e-d1a7097661d7');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', 'de0da37f-c714-4f90-887b-0681883a2849');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', 'd2c44dff-9033-461f-bfe3-c4b8071326cd');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '815a6e29-0f5a-47f9-ba3f-fd9121ede957');
+INSERT INTO public.role_permissions VALUES ('dc91fc07-2505-4976-898c-dfd881b93831', '643f77a1-7c6d-47ad-9851-8e36f423a221');
+INSERT INTO public.role_permissions VALUES ('3b24ffd8-0762-433c-bcbd-3669907b9fbe', 'd17cd069-c73c-496f-9f82-2546b205a3db');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', 'd17cd069-c73c-496f-9f82-2546b205a3db');
+INSERT INTO public.role_permissions VALUES ('1c857ffd-f890-45a5-ab09-d66ee3f68319', 'd17cd069-c73c-496f-9f82-2546b205a3db');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', '46a1474d-4c39-4cab-baa8-39f27c856d86');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', '22503f83-2117-417e-a6c5-a46b69eb8af4');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', 'deea4b17-613a-44fe-ac56-4479f55bd688');
+INSERT INTO public.role_permissions VALUES ('3b24ffd8-0762-433c-bcbd-3669907b9fbe', '030b75ee-7c23-4737-be43-fc987fd75fc9');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', '030b75ee-7c23-4737-be43-fc987fd75fc9');
+INSERT INTO public.role_permissions VALUES ('1c857ffd-f890-45a5-ab09-d66ee3f68319', '030b75ee-7c23-4737-be43-fc987fd75fc9');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', '68e216bd-80bc-4a0f-92ce-186b5678308a');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', '01b928e4-87f3-4f26-9d66-bb4cfaeff7be');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', '2964c189-5657-43d4-ae98-fc78006ae445');
+INSERT INTO public.role_permissions VALUES ('3b24ffd8-0762-433c-bcbd-3669907b9fbe', '72f16bba-70bb-4877-a498-2ba6d8b815a8');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', '72f16bba-70bb-4877-a498-2ba6d8b815a8');
+INSERT INTO public.role_permissions VALUES ('1c857ffd-f890-45a5-ab09-d66ee3f68319', '72f16bba-70bb-4877-a498-2ba6d8b815a8');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', '4de291e8-138f-469e-b95e-f411dc710690');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', 'f2f1d65e-9ef8-46f9-8328-934f9ee4ae6f');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', 'bc648d67-04eb-4368-b631-2090d13ca093');
+INSERT INTO public.role_permissions VALUES ('3b24ffd8-0762-433c-bcbd-3669907b9fbe', '199f77e3-e0ae-4f6e-bfb7-3f61eebc0f1b');
+INSERT INTO public.role_permissions VALUES ('1c857ffd-f890-45a5-ab09-d66ee3f68319', '199f77e3-e0ae-4f6e-bfb7-3f61eebc0f1b');
+INSERT INTO public.role_permissions VALUES ('3b24ffd8-0762-433c-bcbd-3669907b9fbe', '21ace77f-1f0a-47f6-97f2-80c1bd56852d');
+INSERT INTO public.role_permissions VALUES ('3b24ffd8-0762-433c-bcbd-3669907b9fbe', 'cf7f20ce-e150-42e3-a9d7-1e13f9ce42c6');
+INSERT INTO public.role_permissions VALUES ('1c857ffd-f890-45a5-ab09-d66ee3f68319', 'e9b28f23-e906-4deb-b31d-d0253b268047');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', '0f63e6c3-af84-467d-bf8c-0e64684c9c25');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', 'fd7318dd-4402-421b-86f3-eb16c79fa710');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', '3854fd20-37ad-413a-8308-9236d9495828');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', 'a014d50c-bc3d-4a83-97ff-6929b49c7d14');
+INSERT INTO public.role_permissions VALUES ('3b24ffd8-0762-433c-bcbd-3669907b9fbe', '6a9a04ee-4c7b-4fa7-9467-3adcce77d1ee');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', '6a9a04ee-4c7b-4fa7-9467-3adcce77d1ee');
+INSERT INTO public.role_permissions VALUES ('1c857ffd-f890-45a5-ab09-d66ee3f68319', '6a9a04ee-4c7b-4fa7-9467-3adcce77d1ee');
+INSERT INTO public.role_permissions VALUES ('3b24ffd8-0762-433c-bcbd-3669907b9fbe', '55d5c3ac-6fcf-42ea-bd51-95ba57c721c8');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', '55d5c3ac-6fcf-42ea-bd51-95ba57c721c8');
+INSERT INTO public.role_permissions VALUES ('3b24ffd8-0762-433c-bcbd-3669907b9fbe', '7cfd4dd5-3b16-46d2-9e62-6ba26e988b43');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', '7cfd4dd5-3b16-46d2-9e62-6ba26e988b43');
+INSERT INTO public.role_permissions VALUES ('3b24ffd8-0762-433c-bcbd-3669907b9fbe', '79dc90b8-b743-43f0-bae6-9a2f8f12f90d');
+INSERT INTO public.role_permissions VALUES ('3b24ffd8-0762-433c-bcbd-3669907b9fbe', 'fda3eb28-4dda-4f82-80f5-63545c940a84');
+INSERT INTO public.role_permissions VALUES ('3b24ffd8-0762-433c-bcbd-3669907b9fbe', '86d51017-27b1-4942-9432-12719325b1bd');
+INSERT INTO public.role_permissions VALUES ('1c857ffd-f890-45a5-ab09-d66ee3f68319', '86d51017-27b1-4942-9432-12719325b1bd');
+INSERT INTO public.role_permissions VALUES ('1c857ffd-f890-45a5-ab09-d66ee3f68319', '39cec04d-4067-47ec-a577-7b708ea6046e');
+INSERT INTO public.role_permissions VALUES ('1c857ffd-f890-45a5-ab09-d66ee3f68319', 'f05df2d7-cf98-4c75-b05e-665b31983215');
+INSERT INTO public.role_permissions VALUES ('1c857ffd-f890-45a5-ab09-d66ee3f68319', 'cedf437c-ff68-4c29-a6a2-b676296b61c1');
+INSERT INTO public.role_permissions VALUES ('1c857ffd-f890-45a5-ab09-d66ee3f68319', 'b85e7183-939a-462d-aa62-436134edf420');
+INSERT INTO public.role_permissions VALUES ('3b24ffd8-0762-433c-bcbd-3669907b9fbe', '0529b0bd-731e-4b05-98ce-50363c467950');
+INSERT INTO public.role_permissions VALUES ('1c857ffd-f890-45a5-ab09-d66ee3f68319', '0529b0bd-731e-4b05-98ce-50363c467950');
+INSERT INTO public.role_permissions VALUES ('3b24ffd8-0762-433c-bcbd-3669907b9fbe', 'ed0c980f-dc28-4b98-bdf4-062bc9ee287e');
+INSERT INTO public.role_permissions VALUES ('1c857ffd-f890-45a5-ab09-d66ee3f68319', 'ed0c980f-dc28-4b98-bdf4-062bc9ee287e');
+INSERT INTO public.role_permissions VALUES ('3b24ffd8-0762-433c-bcbd-3669907b9fbe', 'f2c2c7a4-678e-44fc-854e-f5b0ab8ae26c');
+INSERT INTO public.role_permissions VALUES ('1c857ffd-f890-45a5-ab09-d66ee3f68319', 'f2c2c7a4-678e-44fc-854e-f5b0ab8ae26c');
+INSERT INTO public.role_permissions VALUES ('1c857ffd-f890-45a5-ab09-d66ee3f68319', '5836ef78-fc12-4801-83f3-7daf91a79813');
+INSERT INTO public.role_permissions VALUES ('3b24ffd8-0762-433c-bcbd-3669907b9fbe', '58d391f4-fc87-4900-9359-8ccb32197fff');
+INSERT INTO public.role_permissions VALUES ('1c857ffd-f890-45a5-ab09-d66ee3f68319', '58d391f4-fc87-4900-9359-8ccb32197fff');
+INSERT INTO public.role_permissions VALUES ('3b24ffd8-0762-433c-bcbd-3669907b9fbe', '6ecdb2fc-f3d4-449f-a941-b1bb74cf3b33');
+INSERT INTO public.role_permissions VALUES ('1c857ffd-f890-45a5-ab09-d66ee3f68319', '6ecdb2fc-f3d4-449f-a941-b1bb74cf3b33');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', '13e2cfdf-b2ad-4123-b124-1c3eae48756f');
+INSERT INTO public.role_permissions VALUES ('1c857ffd-f890-45a5-ab09-d66ee3f68319', '13e2cfdf-b2ad-4123-b124-1c3eae48756f');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', '8aa9602f-b931-40c7-9da8-068c0bf94e6e');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', '293ed04d-7531-4a0d-95ba-9cdf444cdf48');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', '542e0b60-6257-4cea-b60c-ea0aa13840de');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', '73329ba8-cd3d-465c-a186-07b9fb087703');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', '2c30597f-deb3-4408-8707-a1bb8cf95548');
+INSERT INTO public.role_permissions VALUES ('3b24ffd8-0762-433c-bcbd-3669907b9fbe', '8be0a609-f19d-4572-a5c3-6a4987c76124');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', '8be0a609-f19d-4572-a5c3-6a4987c76124');
+INSERT INTO public.role_permissions VALUES ('1c857ffd-f890-45a5-ab09-d66ee3f68319', '8be0a609-f19d-4572-a5c3-6a4987c76124');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', '848f1ebe-7249-4853-bb7e-c6ad4e6c98ca');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', 'e8f57daa-770c-4b43-ae99-40ef04546318');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', '82553b82-8b06-48ba-ab6a-11f94351dbd7');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', 'f7d57137-6e1a-4eb2-a17e-d1a7097661d7');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', 'de0da37f-c714-4f90-887b-0681883a2849');
+INSERT INTO public.role_permissions VALUES ('1c857ffd-f890-45a5-ab09-d66ee3f68319', 'd2c44dff-9033-461f-bfe3-c4b8071326cd');
+INSERT INTO public.role_permissions VALUES ('1c857ffd-f890-45a5-ab09-d66ee3f68319', '815a6e29-0f5a-47f9-ba3f-fd9121ede957');
+INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891b', '643f77a1-7c6d-47ad-9851-8e36f423a221');
 
 
 --
 -- Name: pgmigrations_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.pgmigrations_id_seq', 7, true);
+SELECT pg_catalog.setval('public.pgmigrations_id_seq', 8, true);
 
 
 --

@@ -324,7 +324,32 @@ suite('Real PostgreSQL API integration (isolated disposable database)',()=>{
     const invalid=await request(app.getHttpServer()).post('/api/v1/admin/media').set('Authorization',`Bearer ${adminToken}`).attach('file',Buffer.from('<svg></svg>'),{filename:'not-an-image.png',contentType:'image/png'});
     expect(invalid.status).toBe(400);
   });
-  it('manages all promotion conditions, enforces immutable usage and accounts vouchers at confirmation/cancellation',async()=>{
+  it('enforces one promotion type in HTTP, direct SQL and concurrent edits',async()=>{
+    const header={name:'Kiểm tra một loại ưu đãi',description:null,startsAt:new Date().toISOString(),endsAt:new Date(Date.now()+86400000).toISOString(),status:'DRAFT'};
+    expect((await endpoint('POST','/admin/promotions',header)).status).toBe(400);
+    expect((await endpoint('POST','/admin/promotions',{...header,type:'ALL'})).status).toBe(400);
+    const p=await data('POST','/admin/promotions',{...header,type:'PRODUCT'});
+    expect(p).toMatchObject({type:'PRODUCT',hasConditions:false});
+    const productInput={productId:product.id,variantId:null,discountPercent:'10',minQuantity:1,maxDiscountAmount:null};
+    expect((await endpoint('POST',`/admin/promotions/${p.id}/order-rules`,{minOrderAmount:'0',discountPercent:'10',maxDiscountAmount:null})).status).toBe(409);
+    const empty=await data('PATCH',`/admin/promotions/${p.id}`,{...header,type:'VOUCHER',version:p.version});
+    await data('POST',`/admin/promotions/${p.id}/vouchers`,{discountPercent:'10',minOrderAmount:'0',maxDiscountAmount:null,maxUses:1,perCustomerLimit:1,status:'ACTIVE'});
+    expect((await data('GET',`/admin/promotions/${p.id}`)).hasConditions).toBe(true);
+    expect((await endpoint('PATCH',`/admin/promotions/${p.id}`,{...header,type:'PRODUCT',version:empty.version})).status).toBe(409);
+    expect((await endpoint('POST',`/admin/promotions/${p.id}/product-rules`,productInput)).status).toBe(409);
+    await expect(db.pool.query('INSERT INTO product_promotion_rules(promotion_id,product_id,discount_percent,min_quantity) VALUES($1,$2,10,1)',[p.id,product.id])).rejects.toMatchObject({code:'23503'});
+    expect((await endpoint('GET','/admin/promotions?type=VOUCHER')).body.data.every((row:Row)=>row.type==='VOUCHER')).toBe(true);
+    const racing=await data('POST','/admin/promotions',{...header,type:'PRODUCT'});
+    const results=await Promise.all([
+      endpoint('PATCH',`/admin/promotions/${racing.id}`,{...header,type:'ORDER',version:racing.version}),
+      endpoint('POST',`/admin/promotions/${racing.id}/product-rules`,productInput),
+    ]);
+    expect([[200,409],[409,201]]).toContainEqual(results.map(r=>r.status));
+    const final=await data('GET',`/admin/promotions/${racing.id}`);
+    expect(final.type).toBe(results[0].status===200?'ORDER':'PRODUCT');
+    await data('DELETE',`/admin/promotions/${racing.id}`);await data('DELETE',`/admin/promotions/${p.id}`);
+  });
+  it('combines different single-type programs, preserves snapshots and accounts vouchers at confirmation/cancellation',async()=>{
     const header={type:'PRODUCT',name:'Chương trình theo sản phẩm',description:null,startsAt:new Date(Date.now()-60000).toISOString(),endsAt:new Date(Date.now()+86400000).toISOString(),status:'ACTIVE'};
     const p=await data('POST','/admin/promotions',header);
     const orderPromotion=await data('POST','/admin/promotions',{...header,type:'ORDER'});
@@ -354,6 +379,7 @@ suite('Real PostgreSQL API integration (isolated disposable database)',()=>{
     expect(quote.amounts).toEqual({subtotalAmount:'400000',productDiscountAmount:'25000',orderDiscountAmount:'30000',voucherDiscountAmount:'20000',shippingFee:'30000',totalAmount:'355000'});
     expect((quote.items as Row[])[0].productPromotionRuleId).toBe(specific.id);
     expect((quote.discounts as Row[]).filter(item=>item.scope==='PRODUCT')).toHaveLength(1);
+    expect(new Set((quote.discounts as Row[]).map(item=>item.promotionId)).size).toBe(3);
     const placedBody={...input,quoteToken:quote.quoteToken},placementKey=randomUUID();
     let placed=await data('POST','/me/orders',placedBody,customerToken,placementKey);
     expect((await data('POST','/me/orders',placedBody,customerToken,placementKey)).id).toBe(placed.id);
@@ -527,5 +553,5 @@ suite('Real PostgreSQL API integration (isolated disposable database)',()=>{
       await page.waitForFunction(()=>document.querySelector<HTMLInputElement>('#fullName')?.value==='Quản trị sửa hồ sơ qua web');
       await page.screenshot({path:resolve(root,'.local/profile-integration.png'),fullPage:true});
     }finally{await browser.close();server.kill();}
-  },60000);
+  },120000);
 });

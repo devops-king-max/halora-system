@@ -69,7 +69,7 @@ Web mặc định dùng URL `/api/v1` cùng origin; Vite proxy qua backend. App 
 
 Bộ kiểm thử tự động đã có API thật + PostgreSQL riêng, SMTP Mailpit và browser web. Android JS export khác APK; việc cài/ký APK và kiểm tra thiết bị cần môi trường Android/EAS. Phạm vi thực tế, kết quả và giới hạn ghi tại `docs/handoff/verification.md`.
 
-Khuyến mãi/voucher (17/10/2026): trang chi tiết có đủ CRUD ba loại điều kiện, danh sách server có phân trang/tìm mã; input PATCH kèm version và output có code/hasUsage. Backend cho sửa mức giảm cho đơn mới sau khi ưu đãi đã dùng, giữ snapshot giao dịch cũ, khóa thay phạm vi đã dùng và cấm xóa. Xem mapping mục 1.10 và OpenAPI cho from/to/productId, giới hạn 0/null, usedCount/reservedCount. App vẫn lấy toàn bộ tiền giảm từ checkout quote, không nhân phần trăm tại frontend.
+Khuyến mãi/voucher (17/10/2026): mỗi chương trình bắt buộc chọn một `type` PRODUCT/ORDER/VOUCHER khi tạo. Chi tiết chỉ có phần CRUD của loại đó; danh sách server có phân trang/tìm mã và lọc type. `Promotion` trả type/hasConditions/hasUsage; chỉ đổi loại khi chưa có điều kiện, chưa dùng và chưa kết thúc. Input PATCH kèm version; output điều kiện có code/hasUsage. Backend cho sửa mức giảm cho đơn mới sau khi ưu đãi đã dùng, giữ snapshot giao dịch cũ, khóa thay phạm vi đã dùng và cấm xóa. Xem mapping mục 1.10 và OpenAPI cho type/from/to/productId, giới hạn 0/null, usedCount/reservedCount. Đơn hàng vẫn kết hợp các chương trình khác nhau; app lấy toàn bộ tiền giảm từ checkout quote, không nhân phần trăm tại frontend. API báo giá không đổi, APK hiện có tiếp tục sử dụng được.
 
 ## App Android native trên Windows
 
