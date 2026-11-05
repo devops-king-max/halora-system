@@ -31,7 +31,8 @@ export class DocumentsService {
     for(const item of input){
       const v=await this.db.one('SELECT v.*,p.name AS product_name FROM product_variants v JOIN products p ON p.id=v.product_id WHERE v.id=$1',[item.variantId]);
       if(kind==='receipt'){
-        await this.db.one("SELECT id FROM supplier_variants WHERE supplier_id=$1 AND variant_id=$2 AND status='ACTIVE'",[supplier!.id,v.id]);
+        const link=await this.db.query("SELECT id FROM supplier_variants WHERE supplier_id=$1 AND variant_id=$2 AND status='ACTIVE'",[supplier!.id,v.id]);
+        assert(link.length===1,'VALIDATION_ERROR','Biến thể chưa được liên kết cung ứng với nhà cung cấp đã chọn.',400);
         const line=BigInt(Number(item.quantity))*money(item.unitCost);total+=line;
         items.push({productId:v.productId,variantId:v.id,productName:v.productName,variantName:v.name,sku:v.sku,quantity:item.quantity,unitCost:item.unitCost,lineTotal:line.toString(),supplierId:supplier!.id});
       }else{
@@ -47,6 +48,18 @@ export class DocumentsService {
     for(const item of items) await this.db.insert(lines,{...item,[fk]:saved.id});
     await this.db.audit(c.actor,create?'CREATE':'UPDATE',table,saved.id);
     return this.detail(kind,saved.id);
+  }
+  // Latest posted receipt wins: the posted unit cost becomes both the supplier's
+  // quoted cost for that SKU and the variant's official reference cost. Locks are
+  // taken in variant-id order so concurrent receipts cannot deadlock; the version
+  // triggers bump version only when a value actually changes.
+  private async syncCosts(supplierId:unknown,items:Row[]):Promise<void>{
+    for(const item of [...items].sort((a,b)=>String(a.variantId).localeCompare(String(b.variantId)))){
+      await this.db.one('SELECT id FROM supplier_variants WHERE supplier_id=$1 AND variant_id=$2 FOR UPDATE',[supplierId,item.variantId]);
+      await this.db.query('UPDATE supplier_variants SET quoted_cost_price=$3::numeric WHERE supplier_id=$1 AND variant_id=$2 AND quoted_cost_price IS DISTINCT FROM $3::numeric',[supplierId,item.variantId,item.unitCost]);
+      await this.db.one('SELECT id FROM product_variants WHERE id=$1 FOR UPDATE',[item.variantId]);
+      await this.db.query('UPDATE product_variants SET reference_cost_price=$2::numeric WHERE id=$1 AND reference_cost_price IS DISTINCT FROM $2::numeric',[item.variantId,item.unitCost]);
+    }
   }
   async invoiceItems(invoiceId:unknown,orderId:unknown):Promise<void>{
     await this.db.query('DELETE FROM invoice_items WHERE invoice_id=$1',[invoiceId]);
@@ -79,6 +92,7 @@ export class DocumentsService {
         const detail=await this.detail(kind,doc.id),items=detail.items as Row[];
         if(kind==='receipt') assert(items.reduce((s,i)=>s+money(i.lineTotal),0n)===money(doc.totalAmount),'INVALID_STATE','Tổng phiếu nhập không khớp.');
         await this.stock.apply(c.actor,items.map(i=>({variantId:String(i.variantId),quantityDelta:Number(kind==='receipt'?i.quantity:i.quantityDelta)})),kind==='receipt'?'RECEIPT':'ADJUSTMENT',kind==='receipt'?'GOODS_RECEIPT':'INVENTORY_ADJUSTMENT',doc.id,c.body.note||doc.reason||null);
+        if(kind==='receipt') await this.syncCosts(doc.supplierId,items);
         await this.db.query(`UPDATE ${ident(table)} SET status='POSTED',posted_at=clock_timestamp() WHERE id=$1`,[doc.id]);
         await this.db.audit(c.actor,'POST',table,doc.id);
         return this.detail(kind,doc.id);

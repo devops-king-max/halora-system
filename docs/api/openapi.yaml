@@ -444,6 +444,8 @@ paths:
           in: query
           schema:
             $ref: '#/components/schemas/Money'
+        - $ref: '#/components/parameters/PriceOperatorQuery'
+        - $ref: '#/components/parameters/PriceValueQuery'
         - name: isFeatured
           in: query
           schema:
@@ -469,6 +471,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/PublicProductSummaryPaginatedResponse'
 
+  /products/price-range:
+    get:
+      tags: [Storefront]
+      summary: Get the storefront product price bounds
+      description: Returns the lowest and highest product price shown on the storefront (lowest ACTIVE variant sale price per active product). Null bounds mean no products are available.
+      responses:
+        '200':
+          description: Operation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductPriceRangeResponse'
+
   /products/{id}:
     get:
       tags: [Storefront]
@@ -486,6 +501,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PublicProductDetailResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /products/{id}/related:
+    get:
+      tags: [Storefront]
+      summary: Get products frequently bought together with this product
+      description: Co-purchase counts from non-cancelled orders. Falls back to popular ACTIVE in-stock products in the same category, then overall popular products. Returns an empty list when there is no real sales data.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/UUID'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 8
+            minimum: 1
+            maximum: 20
+      responses:
+        '200':
+          description: Operation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationListResponse'
         '404':
           $ref: '#/components/responses/ErrorResponse'
 
@@ -532,6 +575,31 @@ paths:
               schema:
                 $ref: '#/components/schemas/CustomerResponse'
         '409':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /me/recommendations:
+    get:
+      tags: [Customer]
+      summary: Get personalised product recommendations for the signed-in customer
+      description: Co-purchase counts from the customer's non-cancelled orders. Falls back to popular ACTIVE in-stock products, first in the purchased categories, then overall. Returns an empty list when no real sales data exists.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 8
+            minimum: 1
+            maximum: 20
+      responses:
+        '200':
+          description: Operation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationListResponse'
+        '401':
           $ref: '#/components/responses/ErrorResponse'
 
   /me/addresses:
@@ -867,6 +935,36 @@ paths:
         '409':
           $ref: '#/components/responses/ErrorResponse'
 
+  /me/assistant/chat:
+    post:
+      tags: [Customer Assistant]
+      summary: Chat with the DB-grounded product consulting assistant
+      description: >-
+        Sends a short customer conversation to the AI assistant. The assistant may
+        only use read-only product tools backed by the Halora database and must not
+        invent products or prices. Returns 503 when ASSISTANT is not configured.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssistantChatInput'
+      responses:
+        '200':
+          description: Operation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssistantChatResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/ErrorResponse'
+        '503':
+          $ref: '#/components/responses/ErrorResponse'
+
   # ================= ADMIN RESOURCES =================
   /admin/categories:
     get:
@@ -1163,6 +1261,8 @@ paths:
           in: query
           schema:
             type: boolean
+        - $ref: '#/components/parameters/PriceOperatorQuery'
+        - $ref: '#/components/parameters/PriceValueQuery'
         - name: sortBy
           in: query
           schema:
@@ -1194,6 +1294,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProductResponse'
+
+  /admin/products/price-range:
+    get:
+      tags: [Admin Products]
+      summary: Get the admin product price bounds
+      description: Returns the lowest and highest product price used by the admin price filter (lowest variant sale price per product, every variant status). Null bounds mean no products are available.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Operation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductPriceRangeResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
 
   /admin/products/{id}/thumbnail:
     put:
@@ -2247,6 +2364,7 @@ paths:
     post:
       tags: [Admin Goods Receipts]
       summary: Create goods receipt draft
+      description: 'Each line carries an editable quoted cost (`unitCost`). Clients prefill it from the supplier variant quote when available; the draft does not change any cost price until it is posted.'
       security:
         - bearerAuth: []
       requestBody:
@@ -2333,6 +2451,7 @@ paths:
     post:
       tags: [Admin Goods Receipts]
       summary: Post (confirm) goods receipt and increment inventory balances
+      description: 'In one transaction it adds stock and movement rows, then writes each line cost back to `supplier_variants.quoted_cost_price` and the variant official cost `product_variants.reference_cost_price` (latest posted receipt wins). Replaying the same Idempotency-Key returns the stored response without applying the cost update again.'
       security:
         - bearerAuth: []
       parameters:
@@ -3583,6 +3702,19 @@ paths:
           in: query
           schema:
             $ref: '#/components/schemas/ISODateTime'
+        - name: year
+          in: query
+          schema:
+            type: integer
+            minimum: 2000
+            maximum: 2100
+            description: Reporting year in Asia/Ho_Chi_Minh. Defaults to the current year when from/to are omitted.
+        - name: quarter
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 4
       responses:
         '200':
           description: Operation result
@@ -3590,6 +3722,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReportDataResponse'
+
+  /admin/insights/restock:
+    get:
+      tags: [Admin Reports]
+      summary: Inventory restock suggestions computed from real sales velocity
+      description: Per ACTIVE variant, computes units sold over the last 30 and 90 days from stock movements, days of cover, and the quantity needed to reach the target cover (default 30 days). Includes the last supplier and quoted cost when available. Sorted low-stock first.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: targetCoverDays
+          in: query
+          schema:
+            type: integer
+            default: 30
+            minimum: 1
+            maximum: 365
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
+      responses:
+        '200':
+          description: Operation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestockInsightListResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
 
   /admin/reports/sales:
     get:
@@ -3655,6 +3819,22 @@ paths:
               schema:
                 $ref: '#/components/schemas/ReportDataResponse'
 
+  /admin/reports/products:
+    get:
+      tags: [Admin Reports]
+      summary: Product and variant sales statistics by quantity and snapshot unit price
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ReportCommonQueryParams'
+      responses:
+        '200':
+          description: Operation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportDataResponse'
+
   /admin/reports/promotions:
     get:
       tags: [Admin Reports]
@@ -3699,7 +3879,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [sales, payments, inventory, purchases, promotions, activity]
+            enum: [sales, payments, inventory, purchases, products, promotions, activity]
         - name: format
           in: query
           required: true
@@ -3755,6 +3935,19 @@ components:
         type: string
         enum: [asc, desc]
         default: desc
+    PriceOperatorQuery:
+      name: priceOperator
+      in: query
+      description: 'Comparison operator applied to the product price. Storefront and admin both compare the lowest variant sale price: storefront uses ACTIVE variants only, admin includes every variant. Requires priceValue.'
+      schema:
+        type: string
+        enum: [GT, LT, GTE, LTE, EQ, NE]
+    PriceValueQuery:
+      name: priceValue
+      in: query
+      description: 'Integer VND amount compared with the product price using priceOperator. Requires priceOperator.'
+      schema:
+        $ref: '#/components/schemas/Money'
     IdempotencyKeyHeader:
       name: Idempotency-Key
       in: header
@@ -3773,6 +3966,16 @@ components:
             $ref: '#/components/schemas/ISODateTime'
           to:
             $ref: '#/components/schemas/ISODateTime'
+          year:
+            type: integer
+            minimum: 2000
+            maximum: 2100
+            description: Reporting year in Asia/Ho_Chi_Minh. Defaults to the current year when from/to are omitted.
+          quarter:
+            type: integer
+            minimum: 1
+            maximum: 4
+            description: Optional quarter inside the reporting year.
           compareFrom:
             $ref: '#/components/schemas/ISODateTime'
           compareTo:
@@ -4506,6 +4709,26 @@ components:
         meta:
           $ref: '#/components/schemas/PaginationMeta'
 
+    ProductPriceRange:
+      type: object
+      required: [minPrice, maxPrice]
+      properties:
+        minPrice:
+          type: string
+          pattern: '^[0-9]+$'
+          nullable: true
+        maxPrice:
+          type: string
+          pattern: '^[0-9]+$'
+          nullable: true
+
+    ProductPriceRangeResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/ProductPriceRange'
+
     PublicProductDetail:
       allOf:
         - $ref: '#/components/schemas/PublicProductSummary'
@@ -4536,6 +4759,90 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/PublicProductDetail'
+
+    AssistantChatMessage:
+      type: object
+      required: [role, content]
+      additionalProperties: false
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+          minLength: 1
+          maxLength: 2000
+
+    AssistantChatInput:
+      type: object
+      required: [messages]
+      additionalProperties: false
+      properties:
+        messages:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/AssistantChatMessage'
+
+    AssistantProduct:
+      type: object
+      required: [id, code, name, thumbnailUrl, priceFrom]
+      properties:
+        id:
+          $ref: '#/components/schemas/UUID'
+        code:
+          type: string
+        name:
+          type: string
+        thumbnailUrl:
+          type: string
+          nullable: true
+        priceFrom:
+          type: string
+          pattern: '^[0-9]+$'
+          nullable: true
+
+    AssistantChatResult:
+      type: object
+      required: [reply, products]
+      properties:
+        reply:
+          type: string
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssistantProduct'
+
+    AssistantChatResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/AssistantChatResult'
+
+    RecommendationItem:
+      allOf:
+        - $ref: '#/components/schemas/PublicProductSummary'
+        - type: object
+          required: [reason, score]
+          properties:
+            reason:
+              type: string
+              enum: [CO_PURCHASE, CATEGORY, POPULAR]
+              description: Why this product was suggested (co-purchase count, same-category popularity or overall popularity).
+            score:
+              type: integer
+              description: Co-purchase order count for CO_PURCHASE; units sold for CATEGORY and POPULAR.
+
+    RecommendationListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecommendationItem'
 
     # Customer & Address
     Customer:
@@ -4722,6 +5029,7 @@ components:
       properties:
         roleIds:
           type: array
+          maxItems: 1
           items:
             $ref: '#/components/schemas/UUID'
         version:
@@ -4763,6 +5071,7 @@ components:
       properties:
         roleIds:
           type: array
+          maxItems: 1
           uniqueItems: true
           items:
             $ref: '#/components/schemas/UUID'
@@ -5597,7 +5906,10 @@ components:
           type: integer
           minimum: 1
         unitCost:
-          $ref: '#/components/schemas/Money'
+          maxLength: 18
+          type: string
+          pattern: '^[0-9]+$'
+          description: Editable quoted cost per line (integer VND). Prefilled from the supplier quote when available; on posting it overwrites the supplier quote and the variant official cost.
 
     GoodsReceiptInput:
       type: object
@@ -6148,3 +6460,87 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/ReportData'
+
+    RestockInsight:
+      type: object
+      required:
+        - variantId
+        - productId
+        - sku
+        - productName
+        - variantName
+        - stockQuantity
+        - lowStockThreshold
+        - unitsSold30
+        - unitsSold90
+        - averageDailySales30
+        - averageDailySales90
+        - daysOfCover
+        - suggestedOrderQuantity
+        - targetCoverDays
+        - isLowStock
+        - lastSupplierId
+        - lastSupplierName
+        - lastUnitCost
+        - quotedCostPrice
+        - lastReceivedAt
+      properties:
+        variantId:
+          $ref: '#/components/schemas/UUID'
+        productId:
+          $ref: '#/components/schemas/UUID'
+        sku:
+          type: string
+        productName:
+          type: string
+        variantName:
+          type: string
+        stockQuantity:
+          type: integer
+        lowStockThreshold:
+          type: integer
+        unitsSold30:
+          type: integer
+        unitsSold90:
+          type: integer
+        averageDailySales30:
+          type: number
+        averageDailySales90:
+          type: number
+        daysOfCover:
+          type: number
+          nullable: true
+        suggestedOrderQuantity:
+          type: integer
+        targetCoverDays:
+          type: integer
+        isLowStock:
+          type: boolean
+        lastSupplierId:
+          allOf:
+            - $ref: '#/components/schemas/UUID'
+          nullable: true
+        lastSupplierName:
+          type: string
+          nullable: true
+        lastUnitCost:
+          type: string
+          pattern: '^[0-9]+$'
+          nullable: true
+        quotedCostPrice:
+          type: string
+          pattern: '^[0-9]+$'
+          nullable: true
+        lastReceivedAt:
+          allOf:
+            - $ref: '#/components/schemas/ISODateTime'
+          nullable: true
+
+    RestockInsightListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestockInsight'

@@ -301,6 +301,9 @@ export const SupplierDetailPage: React.FC = () => {
                 </Button>
               }
             >
+              <Text type="secondary" style={{ display: "block", marginBottom: 12 }}>
+                Giá vốn báo giá được cập nhật tự động khi ghi nhận phiếu nhập hàng của nhà cung cấp này; vẫn có thể chỉnh sửa thủ công.
+              </Text>
               <Table
                 dataSource={variantsData?.data || []}
                 columns={columns}

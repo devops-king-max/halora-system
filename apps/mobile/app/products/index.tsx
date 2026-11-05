@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   FlatList,
@@ -20,8 +20,9 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "../../src/api";
 import { ApiStateWrapper } from "../../src/components/ApiStateWrapper";
+import { PriceOperatorSlider } from "../../src/components/PriceOperatorSlider";
 import { formatVnd } from "../../src/format";
-import { Category, PublicProductSummary } from "@halora/api-client";
+import { Category, PriceOperator, PublicProductSummary } from "@halora/api-client";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = (width - 48) / 2;
@@ -39,6 +40,15 @@ export default function ProductListScreen() {
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>(
     params.categoryId
   );
+  const [priceFilter, setPriceFilter] = useState<
+    { operator: PriceOperator; value: number } | undefined
+  >(undefined);
+  const [appliedPriceFilter, setAppliedPriceFilter] = useState(priceFilter);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setAppliedPriceFilter(priceFilter), 300);
+    return () => clearTimeout(timer);
+  }, [priceFilter]);
 
   const {
     data: categoriesData,
@@ -46,6 +56,21 @@ export default function ProductListScreen() {
     queryKey: ["filter-categories"],
     queryFn: () => apiClient.categories.listPublic({ limit: 100 }),
   });
+
+  const { data: priceRange } = useQuery({
+    queryKey: ["mobile-products-price-range"],
+    queryFn: () => apiClient.products.priceRange(),
+  });
+
+  const priceMin = priceRange ? Number(priceRange.minPrice) : 0;
+  const priceMax = priceRange ? Number(priceRange.maxPrice) : 0;
+  const priceBoundsAvailable =
+    priceRange !== undefined &&
+    priceRange.minPrice !== null &&
+    priceRange.maxPrice !== null &&
+    Number.isFinite(priceMin) &&
+    Number.isFinite(priceMax) &&
+    priceMax > priceMin;
 
   const {
     data,
@@ -59,12 +84,19 @@ export default function ProductListScreen() {
       search,
       selectedCategory,
       params.brandId,
+      appliedPriceFilter?.operator,
+      appliedPriceFilter?.value,
     ],
     queryFn: () =>
       apiClient.products.listPublic({
         search: search.trim() || undefined,
         categoryId: selectedCategory || undefined,
         brandId: params.brandId || undefined,
+        priceOperator: appliedPriceFilter?.operator,
+        priceValue:
+          appliedPriceFilter === undefined
+            ? undefined
+            : String(Math.round(appliedPriceFilter.value)),
         limit: 50,
       }),
   });
@@ -117,6 +149,17 @@ export default function ProductListScreen() {
             );
           }}
         />
+        {priceBoundsAvailable ? (
+          <PriceOperatorSlider
+            min={priceMin}
+            max={priceMax}
+            operator={priceFilter?.operator ?? "GTE"}
+            value={priceFilter?.value ?? priceMin}
+            active={priceFilter !== undefined}
+            onChange={(operator, value) => setPriceFilter({ operator, value })}
+            onClear={() => setPriceFilter(undefined)}
+          />
+        ) : null}
       </Surface>
 
       {/* Product Grid */}

@@ -100,6 +100,24 @@ suite('Real PostgreSQL API integration (isolated disposable database)',()=>{
     expect(JSON.stringify(publicProduct)).not.toContain('referenceCostPrice');
     expect((publicProduct.variants as Row[])[0].salePrice).toBe('200000');
   });
+  it('filters products by price operator on the slider value and exposes real price bounds',async()=>{
+    const price=String((await db.one("SELECT min(sale_price)::text AS price FROM product_variants WHERE product_id=$1 AND status='ACTIVE'",[product.id])).price);
+    const publicRange=await data('GET','/products/price-range',undefined,'');
+    const adminRange=await data('GET','/admin/products/price-range');
+    expect(publicRange.minPrice).not.toBeNull();expect(publicRange.maxPrice).not.toBeNull();
+    expect(adminRange.minPrice).not.toBeNull();expect(adminRange.maxPrice).not.toBeNull();
+    expect(Number(publicRange.minPrice)).toBeLessThanOrEqual(Number(price));expect(Number(publicRange.maxPrice)).toBeGreaterThanOrEqual(Number(price));
+    expect(Number(adminRange.minPrice)).toBeLessThanOrEqual(Number(price));expect(Number(adminRange.maxPrice)).toBeGreaterThanOrEqual(Number(price));
+    const ids=async(path:string):Promise<string[]>=>{const res=await endpoint('GET',path,undefined,path.startsWith('/admin')?adminToken:'');expect(res.status).toBe(200);return (res.body.data as Row[]).map(row=>String(row.id));};
+    for(const operator of ['GTE','LTE','EQ'])expect(await ids(`/products?priceOperator=${operator}&priceValue=${price}`)).toContain(String(product.id));
+    for(const operator of ['GT','LT','NE'])expect(await ids(`/products?priceOperator=${operator}&priceValue=${price}`)).not.toContain(String(product.id));
+    for(const operator of ['GTE','LTE','EQ'])expect(await ids(`/admin/products?priceOperator=${operator}&priceValue=${price}`)).toContain(String(product.id));
+    for(const operator of ['GT','LT','NE'])expect(await ids(`/admin/products?priceOperator=${operator}&priceValue=${price}`)).not.toContain(String(product.id));
+    expect((await endpoint('GET','/products?priceOperator=GTE',undefined,'')).status).toBe(400);
+    expect((await endpoint('GET',`/products?priceValue=${price}`,undefined,'')).status).toBe(400);
+    expect((await endpoint('GET',`/products?priceOperator=INVALID&priceValue=${price}`,undefined,'')).status).toBe(400);
+    expect((await endpoint('GET',`/admin/products?priceOperator=NE&priceValue=${price}`)).status).toBe(200);
+  });
   it('lets administrators edit their own profile without changing roles or losing the session',async()=>{
     const profile=await data('GET','/auth/profile');
     const input={fullName:'Quản trị đã cập nhật',phone:'0900000088',email:`updated-admin-${name}@example.test`,version:profile.version};
@@ -145,14 +163,29 @@ suite('Real PostgreSQL API integration (isolated disposable database)',()=>{
   it('posts receipts once, preserves historical supplier links and rejects a version conflict',async()=>{
     supplier=await data('POST','/admin/suppliers',{name:'Nhà cung cấp kiểm chứng',contactName:'Người liên hệ',phone:'0900000002',email:`supplier-${name}@example.test`,address:'Địa chỉ cung ứng',status:'ACTIVE'});
     const supply=await data('POST',`/admin/suppliers/${supplier.id}/variants`,{variantId:secondVariant.id,quotedCostPrice:'100000',status:'ACTIVE'});
-    const receipt=await data('POST','/admin/goods-receipts',{supplierId:supplier.id,receivedAt:new Date().toISOString(),items:[{variantId:secondVariant.id,quantity:2,unitCost:'100000'}]});
+    const receipt=await data('POST','/admin/goods-receipts',{supplierId:supplier.id,receivedAt:new Date().toISOString(),items:[{variantId:secondVariant.id,quantity:2,unitCost:'125000'}]});
+    // Draft lines keep the entered cost but do not change supplier or official cost prices.
+    const supplierLink=async()=>((await data('GET',`/admin/suppliers/${supplier.id}/variants`)) as unknown as Row[]).find(row=>row.variantId===secondVariant.id)!;
+    const officialVariant=async()=>((await data('GET',`/admin/products/${product.id}/variants`)) as unknown as Row[]).find(row=>row.id===secondVariant.id)!;
+    expect((await supplierLink()).quotedCostPrice).toBe('100000');expect((await officialVariant()).referenceCostPrice).toBe('100000');
     const key=randomUUID();const posted=await data('POST',`/admin/goods-receipts/${receipt.id}/post`,{version:receipt.version},adminToken,key);
+    const postedLink=await supplierLink(),postedVariant=await officialVariant();
+    expect(postedLink.quotedCostPrice).toBe('125000');expect(postedVariant.referenceCostPrice).toBe('125000');
     const repeated=await data('POST',`/admin/goods-receipts/${receipt.id}/post`,{version:receipt.version},adminToken,key);expect(repeated.id).toBe(posted.id);
+    // Idempotent replay must not bump the cost rows a second time.
+    expect((await supplierLink()).version).toBe(postedLink.version);expect((await officialVariant()).version).toBe(postedVariant.version);
     expect((await endpoint('POST',`/admin/goods-receipts/${receipt.id}/post`,{version:receipt.version},adminToken,randomUUID())).status).toBe(409);
     expect((await endpoint('DELETE',`/admin/suppliers/${supplier.id}/variants/${supply.id}`)).status).toBe(409);
     expect((await endpoint('DELETE',`/admin/goods-receipts/${receipt.id}`)).status).toBe(409);
     const balances=await endpoint('GET','/admin/inventory/balances');expect(balances.body.data.find((b:Row)=>b.variantId===secondVariant.id).stockQuantity).toBe(12);
     expect((await endpoint('PATCH',`/admin/categories/${category.id}`,{...categoryInput,version:0})).status).toBe(400);
+  });
+  it('lets the latest posted receipt win for supplier quote and official cost',async()=>{
+    const receipt=await data('POST','/admin/goods-receipts',{supplierId:supplier.id,receivedAt:new Date().toISOString(),items:[{variantId:secondVariant.id,quantity:1,unitCost:'130000'}]});
+    await data('POST',`/admin/goods-receipts/${receipt.id}/post`,{version:receipt.version},adminToken,randomUUID());
+    const supplierLink=((await data('GET',`/admin/suppliers/${supplier.id}/variants`)) as unknown as Row[]).find(row=>row.variantId===secondVariant.id)!;
+    const officialVariant=((await data('GET',`/admin/products/${product.id}/variants`)) as unknown as Row[]).find(row=>row.id===secondVariant.id)!;
+    expect(supplierLink.quotedCostPrice).toBe('130000');expect(officialVariant.referenceCostPrice).toBe('130000');
   });
   it('reserves the last voucher once, prices exactly and removes only purchased cart lines',async()=>{
     const promotion=await data('POST','/admin/promotions',{type:'PRODUCT',name:'Ưu đãi kiểm chứng',description:null,startsAt:new Date(Date.now()-60000).toISOString(),endsAt:new Date(Date.now()+86400000).toISOString(),status:'ACTIVE'});
@@ -222,7 +255,12 @@ suite('Real PostgreSQL API integration (isolated disposable database)',()=>{
     const sales=await data('GET','/admin/reports/sales');
     expect((sales.metrics as Row[]).find(m=>m.key==='invoiceAmount')?.value).toBe('200000');
     expect((sales.metrics as Row[]).find(m=>m.key==='completedOrderAmount')?.value).toBe('183900');
-    for(const kind of ['payments','inventory','purchases','promotions','activity'])expect((await endpoint('GET',`/admin/reports/${kind}`)).status).toBe(200);
+    for(const kind of ['payments','inventory','purchases','products','promotions','activity'])expect((await endpoint('GET',`/admin/reports/${kind}`)).status).toBe(200);
+    const products=await data('GET','/admin/reports/products');
+    expect((products.columns as Row[]).map(c=>c.key)).toEqual(['sku','productName','variantName','quantity','unitPrice','amount']);
+    expect((products.series as Row[]).map(s=>s.key)).toEqual(['productQuantity','productAmount']);
+    expect((products.metrics as Row[]).find(m=>m.key==='productQuantity')?.value).toBe('1');
+    expect((await endpoint('GET','/admin/reports/products?quarter=5')).status).toBe(400);
     const pdf=await endpoint('GET',`/admin/invoices/${invoice.id}/export?format=pdf`);expect(pdf.status).toBe(200);expect(pdf.headers['content-type']).toContain('application/pdf');expect(pdf.body.subarray(0,4).toString()).toBe('%PDF');
     const excel=await endpoint('GET','/admin/reports/sales/export?format=xlsx');expect(excel.status).toBe(200);expect(excel.headers['content-type']).toContain('spreadsheetml');
     expect((await endpoint('GET','/admin/reports/sales?from=2026-10-15T00:00:00Z&to=2026-10-01T00:00:00Z')).status).toBe(400);

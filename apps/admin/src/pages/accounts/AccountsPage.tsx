@@ -13,7 +13,6 @@ import {
   Tooltip,
   Modal,
   Alert,
-  Checkbox,
 } from "antd";
 import {
   SearchOutlined,
@@ -146,7 +145,7 @@ export const AccountsPage: React.FC<{ permissionMode?: boolean }> = ({ permissio
       render: (_: unknown, record: Account) => (
         <Space size="small">
           {record.realm === 'STAFF' ? <PermissionGuard permission="employees.assignRoles">
-            <Button size="small" icon={<SafetyCertificateOutlined />} disabled={!rolesQuery.data} onClick={() => { setEditingAccount(record); setSelectedRoles(record.roleIds); }}>Gán vai trò</Button>
+            <Button size="small" icon={<SafetyCertificateOutlined />} disabled={!rolesQuery.data} onClick={() => { setEditingAccount(record); setSelectedRoles(record.roleIds.slice(0, 1)); }}>Gán vai trò</Button>
           </PermissionGuard> : <Text type="secondary">Vai trò cố định</Text>}
           <PermissionGuard permission="accounts.update">
             {record.status === "LOCKED" ? (
@@ -194,7 +193,7 @@ export const AccountsPage: React.FC<{ permissionMode?: boolean }> = ({ permissio
         <Title level={4} style={{ margin: 0 }}>
           {permissionMode ? 'Phân quyền tài khoản' : 'Quản lý tài khoản hệ thống'}
         </Title>
-        <Text type="secondary">Gán vai trò cho từng tài khoản; quyền của mỗi vai trò được hệ thống quy định cố định. Khách hàng luôn có vai trò Khách hàng.</Text>
+        <Text type="secondary">Gán vai trò cho từng tài khoản; mỗi tài khoản nhân viên chỉ có tối đa một vai trò và quyền của vai trò được hệ thống quy định cố định. Khách hàng luôn có vai trò Khách hàng.</Text>
       </div>
 
       {rolesQuery.isError && <Alert type="error" showIcon message="Không tải được vai trò" action={<Button onClick={() => rolesQuery.refetch()}>Thử lại</Button>} style={{ marginBottom: 16 }} />}
@@ -266,8 +265,16 @@ export const AccountsPage: React.FC<{ permissionMode?: boolean }> = ({ permissio
         )}
       </ApiStateWrapper>
       <Modal title={`Gán vai trò: ${editingAccount?.username || ''}`} open={!!editingAccount} onCancel={() => setEditingAccount(null)} onOk={() => assignRolesMutation.mutate()} confirmLoading={assignRolesMutation.isPending} okText="Lưu vai trò" cancelText="Hủy">
-        <Typography.Paragraph>Mỗi vai trò có bộ quyền cố định. Sau khi đổi vai trò, các phiên đăng nhập của tài khoản này sẽ hết hiệu lực.</Typography.Paragraph>
-        <Checkbox.Group aria-label="Vai trò tài khoản" value={selectedRoles} onChange={values => setSelectedRoles(values.map(String))} style={{ display: 'flex', flexDirection: 'column', gap: 12 }} options={rolesQuery.data?.filter(role => role.code !== 'CUSTOMER').map(role => ({ value: role.id, label: role.name }))} />
+        <Typography.Paragraph>Mỗi tài khoản nhân viên chỉ có tối đa một vai trò; bộ quyền của vai trò là cố định. Sau khi đổi vai trò, các phiên đăng nhập của tài khoản này sẽ hết hiệu lực.</Typography.Paragraph>
+        <Select
+          aria-label="Vai trò tài khoản"
+          value={selectedRoles[0]}
+          onChange={(value) => setSelectedRoles(value ? [String(value)] : [])}
+          allowClear
+          placeholder="Chọn một vai trò"
+          style={{ width: '100%' }}
+          options={rolesQuery.data?.filter(role => role.code !== 'CUSTOMER').map(role => ({ value: role.id, label: `${role.name} (${role.code})` }))}
+        />
       </Modal>
     </div>
   );

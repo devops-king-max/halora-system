@@ -1,5 +1,13 @@
 # Kết quả kiểm chứng bàn giao — 15/10/2026
 
+## Lọc giá bằng thanh trượt và toán tử — 05/11/2026
+
+- Thêm `priceOperator` (`GT/LT/GTE/LTE/EQ/NE`) và `priceValue` (chuỗi số nguyên VND) cho `GET /products` và `GET /admin/products`; backend từ chối khi chỉ gửi một trong hai hoặc toán tử/giá sai định dạng bằng `VALIDATION_ERROR` tiếng Việt. Giá sản phẩm so sánh là giá biến thể thấp nhất (storefront chỉ biến thể ACTIVE, admin mọi biến thể), khớp cách `minPrice` đang dùng; câu SQL tham số hóa.
+- Thêm `GET /products/price-range` và `GET /admin/products/price-range` trả `{ minPrice, maxPrice }` thật từ dữ liệu (nullable khi chưa có sản phẩm) để thanh trượt lấy hai đầu, không hardcode giá. OpenAPI, API client và mapping màn hình/API đã cập nhật cùng thay đổi.
+- Web quản trị dùng Ant Design `Slider` có tooltip luôn mở tại núm + `Segmented` toán tử ngay trên thanh; app khách hàng dùng component `PriceOperatorSlider` tự dựng bằng `PanResponder`, toán tử chọn trên thanh và giá hiển thị trong bong bóng tại núm. Bỏ ô nhập số và dropdown toán tử; không dùng dữ liệu giả, chỉ hiện thanh trượt khi API trả khoảng giá.
+- Kiểm chứng đã chạy: `pnpm --filter @halora/api-client run build` đạt; `pnpm --filter @halora/admin run build` đạt (Vite build thành công, chỉ cảnh báo chunk > 500 kB có sẵn); `pnpm --filter @halora/mobile run typecheck` đạt; `pnpm typecheck` đạt toàn workspace; `pnpm test` đạt 2 test, 30 test bị bỏ qua vì không có `TEST_DATABASE_URL`. Contract mới được kiểm tra bằng `Contract`: hai route price-range được nhận đúng thứ tự trước route `{id}`, query hợp lệ và toán tử lạ bị từ chối. Lượt chạy lại cuối cùng trong cây làm việc chung ghi nhận lỗi typecheck ở `apps/api/src/insights/insights.service.ts` và lỗi build admin ở `apps/admin/src/pages/reports/ReportsPage.tsx`; cả hai là file đang được worker khác sửa (báo cáo/insights), không thuộc thay đổi lọc giá này.
+- Chưa chạy: suite tích hợp cần PostgreSQL thật (`TEST_DATABASE_URL`) trong đó có test mới cho sáu toán tử và biên giá; chưa build/chạy APK hay kiểm tra giao diện trên máy ảo trong lượt này.
+
 ## Mỗi chương trình khuyến mãi một loại — 17/10/2026
 
 - Theo lựa chọn của người dùng: mỗi chương trình có đúng một type PRODUCT/ORDER/VOUCHER; đơn vẫn kết hợp các chương trình khác nhau. Form tạo bắt buộc chọn loại, danh sách có cột/bộ lọc loại, chi tiết chỉ tải phần điều kiện tương ứng. API, OpenAPI, shared client và khóa ngoại PostgreSQL đồng bộ.

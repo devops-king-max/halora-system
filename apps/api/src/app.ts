@@ -20,7 +20,9 @@ import { OrdersService } from './commerce/orders.service';
 import { StockService } from './inventory/stock.service';
 import { DocumentsService } from './inventory/documents.service';
 import { ReportsService } from './reports/reports.service';
+import { InsightsService } from './insights/insights.service';
 import { FilesService } from './files/files.service';
+import { AssistantService } from './assistant/assistant.service';
 
 @Catch()
 class Errors implements ExceptionFilter {
@@ -32,7 +34,7 @@ class Errors implements ExceptionFilter {
     response.status(normalized.status).json({error:{code:normalized.code,message:normalized.message,fieldErrors:normalized.fieldErrors,requestId:request.get('x-request-id')||randomUUID()}});
   }
 }
-@Module({controllers:[ApiController],providers:[Database,AuthService,CatalogService,CustomerService,PricingService,OrdersService,StockService,DocumentsService,ReportsService,FilesService]})
+@Module({controllers:[ApiController],providers:[Database,AuthService,CatalogService,CustomerService,PricingService,OrdersService,StockService,DocumentsService,ReportsService,InsightsService,FilesService,AssistantService]})
 export class AppModule{}
 export async function createApp(){
   const app=await NestFactory.create(AppModule,{abortOnError:false,logger:process.env.NODE_ENV==='test'?false:['error','warn','log']});

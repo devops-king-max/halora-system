@@ -258,6 +258,13 @@ CREATE TABLE public.product_variants (
 
 
 --
+-- Name: COLUMN product_variants.reference_cost_price; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.product_variants.reference_cost_price IS 'Giá vốn chính thức của biến thể; phiếu nhập ghi nhận gần nhất ghi đè bằng đơn giá đã chốt';
+
+
+--
 -- Name: products; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -903,6 +910,13 @@ CREATE TABLE public.supplier_variants (
     version integer DEFAULT 1 NOT NULL,
     CONSTRAINT supplier_variants_status_check CHECK ((status = ANY (ARRAY['ACTIVE'::text, 'INACTIVE'::text])))
 );
+
+
+--
+-- Name: COLUMN supplier_variants.quoted_cost_price; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.supplier_variants.quoted_cost_price IS 'Giá vốn nhà cung cấp báo giá cho biến thể; ghi nhận phiếu nhập ghi đè bằng đơn giá đã chốt';
 
 
 --
@@ -3216,6 +3230,7 @@ INSERT INTO public.pgmigrations VALUES (5, '005_clean_display_labels', '2026-10-
 INSERT INTO public.pgmigrations VALUES (6, '006_catalog_thumbnails', '2026-10-17 12:15:20.149555');
 INSERT INTO public.pgmigrations VALUES (7, '007_promotion_management', '2026-10-17 12:15:20.149555');
 INSERT INTO public.pgmigrations VALUES (8, '008_single_promotion_type', '2026-10-17 12:15:20.149555');
+INSERT INTO public.pgmigrations VALUES (9, '009_cost_price_sync', '2026-11-05 00:00:00');
 
 
 --
@@ -3374,7 +3389,7 @@ INSERT INTO public.role_permissions VALUES ('fe9197a5-6dd4-4c9f-a1aa-1639eb72891
 -- Name: pgmigrations_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.pgmigrations_id_seq', 8, true);
+SELECT pg_catalog.setval('public.pgmigrations_id_seq', 9, true);
 
 
 --

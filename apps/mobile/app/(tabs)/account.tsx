@@ -62,6 +62,12 @@ export default function AccountScreen() {
 
           {/* Account Menu */}
           <View style={styles.menuSection}>
+            <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/assistant")}>
+              <View style={styles.menuIconContainer}><Icon source="robot-outline" size={22} color="#b03a5b" /></View>
+              <Text variant="bodyLarge" style={styles.menuLabel}>Trợ lý tư vấn sản phẩm</Text>
+              <Icon source="chevron-right" size={22} color="#9ca3af" />
+            </TouchableOpacity>
+            <Divider style={styles.divider} />
             <TouchableOpacity style={styles.menuItem} onPress={() => router.push("/profile")}>
               <View style={styles.menuIconContainer}><Icon source="account-edit-outline" size={22} color="#b03a5b" /></View>
               <Text variant="bodyLarge" style={styles.menuLabel}>Chỉnh sửa thông tin cá nhân</Text>

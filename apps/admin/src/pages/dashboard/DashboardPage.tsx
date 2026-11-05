@@ -1,28 +1,26 @@
 import React, { useState } from "react";
-import { Typography, Row, Col, Card, Statistic, DatePicker, Table, Space, Button } from "antd";
+import { Typography, Row, Col, Card, Statistic, Select, Table, Space, Button } from "antd";
 import { ReloadOutlined, DollarOutlined, ShoppingCartOutlined, InboxOutlined } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "../../api";
 import { ApiStateWrapper } from "../../components/common/ApiStateWrapper";
+import { ReportSeriesCharts } from "../../components/reports/ReportCharts";
 import { formatVnd, formatDateTime } from "../../utils/format";
 import type { ReportData } from "@halora/api-client";
-import dayjs from "dayjs";
 
 const { Title, Text } = Typography;
-const { RangePicker } = DatePicker;
+
+const currentYear = Number(
+  new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Ho_Chi_Minh", year: "numeric" }).format(new Date()),
+);
+const yearOptions = Array.from({ length: 6 }, (_, index) => currentYear - index);
 
 export const DashboardPage: React.FC = () => {
-  const [dateRange, setDateRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null]>([
-    dayjs().startOf("month"),
-    dayjs().endOf("month"),
-  ]);
-
-  const from = dateRange[0] ? dateRange[0].toISOString() : undefined;
-  const to = dateRange[1] ? dateRange[1].toISOString() : undefined;
+  const [year, setYear] = useState<number>(currentYear);
 
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery<ReportData>({
-    queryKey: ["admin", "dashboard", from, to],
-    queryFn: () => apiClient.dashboard.getAdmin({ from, to }),
+    queryKey: ["admin", "dashboard", year],
+    queryFn: () => apiClient.dashboard.getAdmin({ year }),
   });
 
   const getMetricIcon = (unit: string) => {
@@ -56,13 +54,11 @@ export const DashboardPage: React.FC = () => {
         </div>
 
         <Space>
-          <RangePicker
-            value={dateRange}
-            onChange={(dates) => {
-              if (dates) {
-                setDateRange([dates[0], dates[1]]);
-              }
-            }}
+          <Select
+            value={year}
+            onChange={(value: number) => setYear(value)}
+            style={{ width: 140 }}
+            options={yearOptions.map((option) => ({ value: option, label: `Năm ${option}` }))}
           />
           <Button
             icon={<ReloadOutlined spin={isFetching} />}
@@ -99,31 +95,8 @@ export const DashboardPage: React.FC = () => {
               ))}
             </Row>
 
-            {/* Time Series Data */}
-            {data.series && data.series.length > 0 && (
-              <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                {data.series.map((s) => (
-                  <Col xs={24} lg={12} key={s.key}>
-                    <Card title={s.name} size="small" bordered={false} style={{ background: "#fafafa" }}>
-                      <Table
-                        size="small"
-                        pagination={false}
-                        dataSource={s.points.map((pt, idx) => ({ ...pt, key: idx }))}
-                        columns={[
-                          { title: "Thời gian", dataIndex: "period", key: "period" },
-                          {
-                            title: `Giá trị (${s.unit === "VND" ? "₫" : s.unit})`,
-                            dataIndex: "value",
-                            key: "value",
-                            render: (val: string) => (s.unit === "VND" ? formatVnd(val) : val),
-                          },
-                        ]}
-                      />
-                    </Card>
-                  </Col>
-                ))}
-              </Row>
-            )}
+            {/* Time Series Charts */}
+            {data.series && data.series.length > 0 && <ReportSeriesCharts series={data.series} />}
 
             {/* Recent Dynamic Rows */}
             {data.columns && data.columns.length > 0 && data.rows && (

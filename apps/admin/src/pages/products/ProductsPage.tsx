@@ -16,6 +16,8 @@ import {
   Tooltip,
   Switch,
   Tag,
+  Slider,
+  Segmented,
 } from "antd";
 import {
   PlusOutlined,
@@ -34,9 +36,18 @@ import { apiClient } from "../../api";
 import { ApiStateWrapper } from "../../components/common/ApiStateWrapper";
 import { StatusBadge } from "../../components/common/StatusBadge";
 import { PermissionGuard } from "../../components/common/PermissionGuard";
-import { formatDateTime } from "../../utils/format";
+import { formatDateTime, formatVnd } from "../../utils/format";
 import { ApiClientError } from "@halora/api-client";
-import type { Product, ProductInput } from "@halora/api-client";
+import type { PriceOperator, Product, ProductInput } from "@halora/api-client";
+
+const PRICE_OPERATOR_OPTIONS: { value: PriceOperator; label: string }[] = [
+  { value: "GTE", label: "≥" },
+  { value: "GT", label: ">" },
+  { value: "EQ", label: "=" },
+  { value: "LTE", label: "≤" },
+  { value: "LT", label: "<" },
+  { value: "NE", label: "≠" },
+];
 
 const { Title, Text } = Typography;
 
@@ -50,6 +61,8 @@ export const ProductsPage: React.FC = () => {
   const [categoryId, setCategoryId] = useState<string | undefined>(undefined);
   const [brandId, setBrandId] = useState<string | undefined>(undefined);
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
+  const [priceOperator, setPriceOperator] = useState<PriceOperator>("GTE");
+  const [priceValue, setPriceValue] = useState<number | undefined>(undefined);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -69,9 +82,25 @@ export const ProductsPage: React.FC = () => {
     queryFn: () => apiClient.brands.listAdmin({ limit: 100 }),
   });
 
+  // Real price bounds for the advanced price slider, never hardcoded.
+  const { data: priceRange } = useQuery({
+    queryKey: ["admin", "products-price-range"],
+    queryFn: () => apiClient.products.priceRangeAdmin(),
+  });
+  const rangeMin = priceRange ? Number(priceRange.minPrice) : 0;
+  const rangeMax = priceRange ? Number(priceRange.maxPrice) : 0;
+  const priceBoundsAvailable =
+    priceRange !== undefined &&
+    priceRange.minPrice !== null &&
+    priceRange.maxPrice !== null &&
+    Number.isFinite(rangeMin) &&
+    Number.isFinite(rangeMax);
+  const priceStep = rangeMax > rangeMin ? Math.max(1, Math.round((rangeMax - rangeMin) / 100)) : 1;
+  const activePriceOperator = priceValue === undefined ? undefined : priceOperator;
+
   // Fetch products
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
-    queryKey: ["admin", "products", page, limit, search, categoryId, brandId, statusFilter],
+    queryKey: ["admin", "products", page, limit, search, categoryId, brandId, statusFilter, activePriceOperator, priceValue],
     queryFn: () =>
       apiClient.products.listAdmin({
         page,
@@ -80,6 +109,8 @@ export const ProductsPage: React.FC = () => {
         categoryId,
         brandId,
         status: statusFilter,
+        priceOperator: activePriceOperator,
+        priceValue: priceValue === undefined ? undefined : String(Math.round(priceValue)),
         sortBy: "createdAt",
         sortOrder: "desc",
       }),
@@ -359,6 +390,39 @@ export const ProductsPage: React.FC = () => {
               { value: "INACTIVE", label: "Ngừng hoạt động" },
             ]}
           />
+          {priceBoundsAvailable && (
+            <div style={{ minWidth: 300, flex: "1 1 320px", maxWidth: 420 }}>
+              <Space size={6} style={{ marginBottom: 2 }}>
+                <Text type="secondary">Lọc theo giá</Text>
+                <Segmented
+                  size="small"
+                  value={priceOperator}
+                  onChange={(value) => setPriceOperator(value as PriceOperator)}
+                  options={PRICE_OPERATOR_OPTIONS}
+                />
+                {priceValue !== undefined && (
+                  <Button type="link" size="small" onClick={() => setPriceValue(undefined)}>
+                    Bỏ lọc
+                  </Button>
+                )}
+              </Space>
+              <Slider
+                min={rangeMin}
+                max={rangeMax}
+                step={priceStep}
+                value={priceValue ?? rangeMin}
+                onChange={(value) => setPriceValue(value)}
+                tooltip={{
+                  open: true,
+                  formatter: (value) => formatVnd(String(Math.round(Number(value ?? 0)))),
+                }}
+                marks={{
+                  [rangeMin]: formatVnd(String(rangeMin)),
+                  [rangeMax]: formatVnd(String(rangeMax)),
+                }}
+              />
+            </div>
+          )}
           <Button icon={<ReloadOutlined spin={isFetching} />} onClick={() => refetch()}>
             Làm mới
           </Button>

@@ -22,6 +22,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "../../src/api";
 import { useAuth } from "../../src/AuthContext";
 import { ApiStateWrapper } from "../../src/components/ApiStateWrapper";
+import { RecommendationRail } from "../../src/components/RecommendationRail";
 import { formatVnd } from "../../src/format";
 import { PublicProductVariant, ProductImage } from "@halora/api-client";
 
@@ -44,6 +45,17 @@ export default function ProductDetailScreen() {
   } = useQuery({
     queryKey: ["mobile-product-detail", id],
     queryFn: () => apiClient.products.getPublic(id!),
+    enabled: !!id,
+  });
+
+  const {
+    data: relatedProducts,
+    isLoading: isRelatedLoading,
+    error: relatedError,
+    refetch: refetchRelated,
+  } = useQuery({
+    queryKey: ["mobile-product-related", id],
+    queryFn: () => apiClient.products.getRelated(id!, 6),
     enabled: !!id,
   });
 
@@ -286,6 +298,16 @@ export default function ProductDetailScreen() {
                   </>
                 )}
               </Surface>
+
+              {/* Frequently bought together */}
+              <RecommendationRail
+                title="Thường được mua cùng"
+                items={relatedProducts ?? []}
+                isLoading={isRelatedLoading}
+                error={relatedError as Error | null}
+                onRetry={() => refetchRelated()}
+                onPressItem={(item) => router.push(`/products/${item.id}`)}
+              />
             </ScrollView>
 
             {/* Bottom Add to Cart Bar */}

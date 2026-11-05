@@ -19,7 +19,9 @@ import {
 import { useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "../../src/api";
+import { useAuth } from "../../src/AuthContext";
 import { ApiStateWrapper } from "../../src/components/ApiStateWrapper";
+import { RecommendationRail } from "../../src/components/RecommendationRail";
 import { formatVnd } from "../../src/format";
 import { Category, PublicProductSummary } from "@halora/api-client";
 
@@ -28,6 +30,7 @@ const CARD_WIDTH = (width - 48) / 2;
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { isAuthenticated } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
 
   const {
@@ -51,6 +54,17 @@ export default function HomeScreen() {
     queryFn: () => apiClient.products.listPublic({ limit: 10, isFeatured: true }),
   });
 
+  const {
+    data: recommendations,
+    isLoading: isRecommendationsLoading,
+    error: recommendationsError,
+    refetch: refetchRecommendations,
+  } = useQuery({
+    queryKey: ["home-recommendations"],
+    queryFn: () => apiClient.customerPortal.getRecommendations(6),
+    enabled: isAuthenticated,
+  });
+
   const handleSearchSubmit = () => {
     if (searchQuery.trim()) {
       router.push({
@@ -61,7 +75,11 @@ export default function HomeScreen() {
   };
 
   const handleRefresh = async () => {
-    await Promise.all([refetchCategories(), refetchProducts()]);
+    await Promise.all([
+      refetchCategories(),
+      refetchProducts(),
+      ...(isAuthenticated ? [refetchRecommendations()] : []),
+    ]);
   };
 
   const categories = categoriesData?.data || [];
@@ -188,6 +206,18 @@ export default function HomeScreen() {
           </View>
         </ApiStateWrapper>
       </View>
+
+      {isAuthenticated ? (
+        <RecommendationRail
+          title="Gợi ý cho bạn"
+          subtitle="Dựa trên sản phẩm bạn đã mua"
+          items={recommendations ?? []}
+          isLoading={isRecommendationsLoading}
+          error={recommendationsError as Error | null}
+          onRetry={() => refetchRecommendations()}
+          onPressItem={(item) => router.push(`/products/${item.id}`)}
+        />
+      ) : null}
     </ScrollView>
   );
 }

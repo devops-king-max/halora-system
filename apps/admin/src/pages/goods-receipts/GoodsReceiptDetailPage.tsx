@@ -151,7 +151,7 @@ export const GoodsReceiptDetailPage: React.FC = () => {
       render: (q: number) => <Text strong>{q}</Text>,
     },
     {
-      title: "Đơn giá vốn",
+      title: "Giá vốn nhập",
       dataIndex: "unitCost",
       key: "unitCost",
       render: (cost: string) => formatVnd(cost),
@@ -282,6 +282,9 @@ export const GoodsReceiptDetailPage: React.FC = () => {
       >
         <p>
           Hệ thống sẽ chuyển trạng thái phiếu sang <Tag color="green">ĐÃ GHI NHẬN</Tag> và cộng trực tiếp số lượng từng mặt hàng vào kho.
+        </p>
+        <p>
+          Đồng thời, giá vốn báo giá của nhà cung cấp và giá vốn chính thức của biến thể được cập nhật theo đơn giá đã chốt trên phiếu.
         </p>
         <p style={{ color: "#fa8c16", fontSize: 13 }}>
           * Thao tác này không thể hoàn tác sau khi đã ghi nhận.

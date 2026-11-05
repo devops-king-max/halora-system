@@ -31,6 +31,10 @@ export default function RootLayout() {
               options={{ title: "Danh sách sản phẩm" }}
             />
             <Stack.Screen
+              name="assistant"
+              options={{ title: "Trợ lý tư vấn" }}
+            />
+            <Stack.Screen
               name="checkout"
               options={{ title: "Thanh toán đơn hàng" }}
             />

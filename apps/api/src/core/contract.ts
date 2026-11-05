@@ -62,7 +62,7 @@ export class Contract {
           if(key==='version')property.minimum=1;
           if(['minQuantity','perCustomerLimit'].includes(key)&&property.minimum===undefined)property.minimum=0;
           if(key==='items'&&property.type==='array'){property.minItems=1;property.maxItems=100;}
-          if(key.endsWith('Ids')&&property.type==='array'){property.maxItems=200;property.uniqueItems=true;}
+          if(key.endsWith('Ids')&&property.type==='array'){const limit=typeof property.maxItems==='number'?property.maxItems:200;property.maxItems=Math.min(limit,200);property.uniqueItems=true;}
         }
         return [key,property];
       }));

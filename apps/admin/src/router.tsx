@@ -44,6 +44,7 @@ import { OrderDetailPage } from "./pages/orders/OrderDetailPage";
 import { InvoicesPage } from "./pages/invoices/InvoicesPage";
 import { InvoiceDetailPage } from "./pages/invoices/InvoiceDetailPage";
 import { ReportsPage } from "./pages/reports/ReportsPage";
+import { RestockInsightsPage } from "./pages/insights/RestockInsightsPage";
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -224,6 +225,10 @@ export const router = createBrowserRouter([
       {
         path: "reports",
         element: <ReportsPage />,
+      },
+      {
+        path: "insights/restock",
+        element: <RestockInsightsPage />,
       },
     ],
   },

@@ -31,7 +31,7 @@ import { StatusBadge } from "../../components/common/StatusBadge";
 import { PermissionGuard } from "../../components/common/PermissionGuard";
 import { formatVnd, formatDateTime } from "../../utils/format";
 import { ApiClientError } from "@halora/api-client";
-import type { GoodsReceipt, GoodsReceiptInput } from "@halora/api-client";
+import type { GoodsReceipt, GoodsReceiptInput, SupplierVariant } from "@halora/api-client";
 import dayjs from "dayjs";
 
 const { Title, Text } = Typography;
@@ -48,12 +48,33 @@ export const GoodsReceiptsPage: React.FC = () => {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [form] = Form.useForm();
+  const selectedSupplierId = Form.useWatch("supplierId", form);
 
   // Fetch suppliers for select
   const { data: suppliersData } = useQuery({
     queryKey: ["admin", "suppliers-select"],
     queryFn: () => apiClient.suppliers.listAdmin({ limit: 100 }),
   });
+
+  // Fetch all of the selected supplier's quoted costs to prefill each receipt line.
+  const { data: supplierVariants = [] } = useQuery({
+    queryKey: ["admin", "suppliers", selectedSupplierId, "variants-for-receipt"],
+    queryFn: async () => {
+      const rows: SupplierVariant[] = [];
+      for (let page = 1; ; page++) {
+        const result = await apiClient.suppliers.listVariants(selectedSupplierId!, { page, limit: 100 });
+        rows.push(...result.data);
+        if (page >= result.meta.totalPages) return rows;
+      }
+    },
+    enabled: !!selectedSupplierId,
+  });
+
+  const quoteByVariant = new Map(
+    supplierVariants
+      .filter((variant) => variant.status === "ACTIVE")
+      .map((variant) => [variant.variantId, variant.quotedCostPrice] as const)
+  );
 
   // Fetch goods receipts list
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
@@ -92,7 +113,7 @@ export const GoodsReceiptsPage: React.FC = () => {
     form.resetFields();
     form.setFieldsValue({
       receivedAt: dayjs(),
-      items: [{ variantId: "", quantity: 1, unitCost: "0" }],
+      items: [{ variantId: "", quantity: 1, unitCost: "" }],
     });
     setModalOpen(true);
   };
@@ -276,10 +297,12 @@ export const GoodsReceiptsPage: React.FC = () => {
           <Form.Item
             name="supplierId"
             label="Nhà cung cấp"
+            extra="Giá vốn báo giá được điền sẵn theo nhà cung cấp và có thể sửa từng dòng trước khi ghi nhận."
             rules={[{ required: true, message: "Vui lòng chọn nhà cung cấp" }]}
           >
             <Select
               placeholder="Chọn nhà cung cấp"
+              onChange={() => form.setFieldsValue({ items: [{ variantId: "", quantity: 1, unitCost: "" }] })}
               options={suppliersData?.data.map((s) => ({ value: s.id, label: `${s.name} (${s.code})` })) || []}
             />
           </Form.Item>
@@ -309,7 +332,14 @@ export const GoodsReceiptsPage: React.FC = () => {
                       rules={[{ required: true, message: "Chọn biến thể" }]}
                       style={{ width: 300 }}
                     >
-                      <BusinessCodeSelect />
+                      <BusinessCodeSelect
+                        onChange={(value) =>
+                          form.setFieldValue(
+                            ["items", name, "unitCost"],
+                            value ? quoteByVariant.get(value) ?? "" : ""
+                          )
+                        }
+                      />
                     </Form.Item>
 
                     <Form.Item
@@ -324,10 +354,10 @@ export const GoodsReceiptsPage: React.FC = () => {
                     <Form.Item
                       {...restField}
                       name={[name, "unitCost"]}
-                      rules={[{ required: true, message: "Nhập đơn giá vốn" }]}
-                      style={{ width: 180 }}
+                      rules={[{ required: true, message: "Nhập giá vốn báo giá" }]}
+                      style={{ width: 200 }}
                     >
-                      <Input placeholder="Đơn giá vốn" addonAfter="₫" />
+                      <Input placeholder="Giá vốn báo giá" addonAfter="₫" />
                     </Form.Item>
 
                     <MinusCircleOutlined onClick={() => remove(name)} style={{ color: "#ff4d4f" }} />

@@ -9,6 +9,8 @@ import type {
   ApiError,
   ApiErrorResponse,
   ApiResponse,
+  AssistantChatInput,
+  AssistantChatResult,
   Brand,
   BrandInput,
   Cart,
@@ -55,6 +57,7 @@ import type {
   Principal,
   Product,
   ProductFilterQuery,
+  ProductPriceRange,
   ProductImage,
   ProductImageInput,
   ProductInput,
@@ -65,9 +68,12 @@ import type {
   PromotionInput,
   PublicProductDetail,
   PublicProductSummary,
+  RecommendationItem,
   Refund,
   ReportData,
   ReportFilterQuery,
+  RestockInsight,
+  RestockInsightQuery,
   Role,
   StaffAuthResult,
   StockMovement,
@@ -563,11 +569,29 @@ export class HaloraApiClient {
         requiresAuth: false,
       }).then((r) => r.data),
 
+    getRelated: (id: UUID, limit?: number) =>
+      this.request<ApiResponse<RecommendationItem[]>>(`/products/${id}/related`, {
+        method: "GET",
+        params: limit ? { limit } : undefined,
+        requiresAuth: false,
+      }).then((r) => r.data),
+
     listAdmin: (query?: ProductFilterQuery & { status?: string }) =>
       this.request<PaginatedResponse<Product>>("/admin/products", {
         method: "GET",
         params: query as Record<string, unknown>,
       }),
+
+    priceRange: () =>
+      this.request<ApiResponse<ProductPriceRange>>("/products/price-range", {
+        method: "GET",
+        requiresAuth: false,
+      }).then((r) => r.data),
+
+    priceRangeAdmin: () =>
+      this.request<ApiResponse<ProductPriceRange>>("/admin/products/price-range", {
+        method: "GET",
+      }).then((r) => r.data),
 
     getAdmin: (id: UUID) =>
       this.request<ApiResponse<Product>>(`/admin/products/${id}`, { method: "GET" }).then((r) => r.data),
@@ -656,6 +680,12 @@ export class HaloraApiClient {
         body: input,
       }).then((r) => r.data),
 
+    chatAssistant: (input: AssistantChatInput) =>
+      this.request<ApiResponse<AssistantChatResult>>("/me/assistant/chat", {
+        method: "POST",
+        body: input,
+      }).then((r) => r.data),
+
     listAddresses: () =>
       this.request<ApiResponse<CustomerAddress[]>>("/me/addresses", { method: "GET" }).then((r) => r.data),
 
@@ -673,6 +703,12 @@ export class HaloraApiClient {
 
     deleteAddress: (id: UUID) =>
       this.request<void>(`/me/addresses/${id}`, { method: "DELETE" }),
+
+    getRecommendations: (limit?: number) =>
+      this.request<ApiResponse<RecommendationItem[]>>("/me/recommendations", {
+        method: "GET",
+        params: limit ? { limit } : undefined,
+      }).then((r) => r.data),
   };
 
   // ================= CART =================
@@ -1202,10 +1238,18 @@ export class HaloraApiClient {
 
   // ================= DASHBOARD & REPORTS =================
   public readonly dashboard = {
-    getAdmin: (params?: { from?: string; to?: string }) =>
+    getAdmin: (params?: ReportFilterQuery) =>
       this.request<ApiResponse<ReportData>>("/admin/dashboard", {
         method: "GET",
-        params,
+        params: params as Record<string, unknown> | undefined,
+      }).then((r) => r.data),
+  };
+
+  public readonly insights = {
+    getRestock: (query?: RestockInsightQuery) =>
+      this.request<ApiResponse<RestockInsight[]>>("/admin/insights/restock", {
+        method: "GET",
+        params: query as Record<string, unknown> | undefined,
       }).then((r) => r.data),
   };
 
@@ -1230,6 +1274,12 @@ export class HaloraApiClient {
 
     getPurchases: (query?: ReportFilterQuery) =>
       this.request<ApiResponse<ReportData>>("/admin/reports/purchases", {
+        method: "GET",
+        params: query as Record<string, unknown>,
+      }).then((r) => r.data),
+
+    getProducts: (query?: ReportFilterQuery) =>
+      this.request<ApiResponse<ReportData>>("/admin/reports/products", {
         method: "GET",
         params: query as Record<string, unknown>,
       }).then((r) => r.data),

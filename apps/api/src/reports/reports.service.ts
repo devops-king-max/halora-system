@@ -7,6 +7,41 @@ export interface Metric {key:string;label:string;value:string;unit:'VND'|'COUNT'
 export interface Column {key:string;label:string;type:'TEXT'|'MONEY'|'NUMBER'|'DATETIME'|'STATUS';}
 export interface Report {metrics:Metric[];series:{key:string;name:string;unit:Metric['unit'];points:{period:string;value:string}[]}[];columns:Column[];rows:{key:string;values:Row;sourceType:string|null;sourceId:string|null}[];meta:{page:number;limit:number;total:number;totalPages:number};}
 type Source='orders'|'invoices'|'payments'|'refunds'|'goods_receipts'|'stock_movements'|'audit_logs';
+const ZONE='Asia/Ho_Chi_Minh';
+const ZONE_OFFSET='+07:00';
+const monthFormat=new Intl.DateTimeFormat('en-CA',{timeZone:ZONE,year:'numeric',month:'2-digit'});
+export function currentReportYear():number{return Number(new Intl.DateTimeFormat('en-US',{timeZone:ZONE,year:'numeric'}).format(new Date()));}
+function monthKey(value:string):string{
+  const parts=monthFormat.formatToParts(new Date(value));
+  return `${parts.find(p=>p.type==='year')!.value}-${parts.find(p=>p.type==='month')!.value}`;
+}
+function nextMonth(key:string):string{
+  const [year,month]=key.split('-').map(Number);
+  return month===12?`${year+1}-01`:`${year}-${String(month+1).padStart(2,'0')}`;
+}
+// Reports are scoped to a single calendar year by default (Asia/Ho_Chi_Minh), optionally a quarter.
+export function resolveReportPeriod(query:Row,defaultYear=currentReportYear()):Row{
+  const rawYear=query.year===undefined||query.year===null||query.year===''?undefined:Number(query.year);
+  const rawQuarter=query.quarter===undefined||query.quarter===null||query.quarter===''?undefined:Number(query.quarter);
+  assert(rawYear===undefined||(Number.isInteger(rawYear)&&rawYear>=2000&&rawYear<=2100),'VALIDATION_ERROR','Năm báo cáo không hợp lệ.',400);
+  assert(rawQuarter===undefined||(Number.isInteger(rawQuarter)&&rawQuarter>=1&&rawQuarter<=4),'VALIDATION_ERROR','Quý báo cáo phải từ 1 đến 4.',400);
+  if(rawYear===undefined&&rawQuarter===undefined){
+    if(query.from||query.to)return query;
+    return {...query,year:defaultYear,from:`${defaultYear}-01-01T00:00:00${ZONE_OFFSET}`,to:`${defaultYear+1}-01-01T00:00:00${ZONE_OFFSET}`};
+  }
+  const year=rawYear??defaultYear;
+  const startMonth=rawQuarter?(rawQuarter-1)*3:0;
+  const endMonth=rawQuarter?startMonth+3:12;
+  const pad=(month:number)=>String(month+1).padStart(2,'0');
+  return {...query,year,quarter:rawQuarter,from:`${year}-${pad(startMonth)}-01T00:00:00${ZONE_OFFSET}`,to:endMonth===12?`${year+1}-01-01T00:00:00${ZONE_OFFSET}`:`${year}-${pad(endMonth)}-01T00:00:00${ZONE_OFFSET}`};
+}
+function periodMonths(from:string,to:string):string[]{
+  const last=monthKey(new Date(new Date(to).getTime()-1).toISOString());
+  const months:string[]=[];
+  let key=monthKey(from);
+  for(let i=0;i<240;i++){months.push(key);if(key===last)break;key=nextMonth(key);}
+  return months;
+}
 @Injectable()
 export class ReportsService {
   constructor(@Inject(Database) private readonly db:Database){}
@@ -52,11 +87,12 @@ export class ReportsService {
     }
   }
   async get(kind:string,q:Row):Promise<Report>{
-    this.validate(q);
+    const period=resolveReportPeriod(q);
+    this.validate(period);
     return this.db.snapshot(async()=>{
-      const report=await this.build(kind,q);
-      if(q.compareFrom&&q.compareTo){
-        const previous=await this.build(kind,{...q,from:q.compareFrom,to:q.compareTo,compareFrom:undefined,compareTo:undefined});
+      const report=await this.build(kind,period);
+      if(period.compareFrom&&period.compareTo){
+        const previous=await this.build(kind,{...period,from:period.compareFrom,to:period.compareTo,year:undefined,quarter:undefined,compareFrom:undefined,compareTo:undefined});
         report.metrics.push(...previous.metrics.map(m=>({...m,key:`compare_${m.key}`,label:`Kỳ so sánh: ${m.label}`})));
         report.series.push(...previous.series.map(s=>({...s,key:`compare_${s.key}`,name:`Kỳ so sánh: ${s.name}`})));
       }
@@ -76,7 +112,7 @@ export class ReportsService {
       add('completedOrderAmount','Giá trị phải trả của đơn hoàn tất',await this.scalar(`SELECT COALESCE(sum(s.total_amount),0)::text AS value FROM orders s WHERE s.status='COMPLETED'${ord.sql}`,ord.args),'VND');
       const status=await this.db.query(`SELECT s.status,count(*)::text AS value FROM orders s WHERE true${all.sql} GROUP BY s.status ORDER BY s.status`,all.args);
       for(const row of status)add(`status_${row.status}`,`Đơn ${row.status}`,String(row.value),'COUNT');
-      const points=await this.db.query(`SELECT to_char(s.completed_at AT TIME ZONE 'Asia/Ho_Chi_Minh','YYYY-MM-DD') AS period,sum(s.total_amount)::text AS value FROM orders s WHERE s.status='COMPLETED'${ord.sql} GROUP BY 1 ORDER BY 1`,ord.args);
+      const points=await this.db.query(`SELECT to_char(s.completed_at AT TIME ZONE '${ZONE}','YYYY-MM') AS period,sum(s.total_amount)::text AS value FROM orders s WHERE s.status='COMPLETED'${ord.sql} GROUP BY 1 ORDER BY 1`,ord.args);
       report.series.push({key:'completedOrderAmount',name:'Giá trị đơn hoàn tất',unit:'VND',points:points as {period:string;value:string}[]});
       sql=`SELECT s.id,s.order_code AS code,s.customer_name,s.status,s.total_amount,s.created_at FROM orders s WHERE true${all.sql}`;args=all.args;sourceType='ORDER';
       report.columns=[this.column('code','Mã đơn'),this.column('customerName','Khách hàng'),this.column('status','Trạng thái','STATUS'),this.column('totalAmount','Tổng phải trả','MONEY'),this.column('createdAt','Ngày đặt','DATETIME')];
@@ -111,6 +147,21 @@ export class ReportsService {
       add('currentStock','Tồn hiện tại',String(totals.stock),'QUANTITY');add('lowStockVariants','Biến thể dưới ngưỡng',String(totals.low),'COUNT');
       sql=query;args=params;
       report.columns=[this.column('sku','SKU'),this.column('productName','Sản phẩm'),this.column('variantName','Biến thể'),this.column('openingQuantity','Tồn đầu kỳ','NUMBER'),this.column('inboundQuantity','Nhập trong kỳ','NUMBER'),this.column('outboundQuantity','Xuất trong kỳ','NUMBER'),this.column('closingQuantity','Tồn cuối kỳ','NUMBER'),this.column('stockQuantity','Tồn hiện tại','NUMBER')];
+    }else if(kind==='products'){
+      const w=this.where(q,'orders','completed_at');
+      const scope=`FROM order_items li JOIN orders s ON s.id=li.order_id WHERE s.status='COMPLETED'${w.sql}`;
+      add('productQuantity','Số lượng bán',await this.scalar(`SELECT COALESCE(sum(li.quantity),0)::text AS value ${scope}`,w.args),'QUANTITY');
+      add('productAmount','Doanh thu theo giá gốc',await this.scalar(`SELECT COALESCE(sum(li.line_subtotal),0)::text AS value ${scope}`,w.args),'VND');
+      add('soldSkuCount','Số SKU bán được',await this.scalar(`SELECT count(DISTINCT li.sku)::text AS value ${scope}`,w.args),'COUNT');
+      const buckets=q.from&&q.to?periodMonths(String(q.from),String(q.to)):[];
+      if(buckets.length){
+        const monthly=await this.db.query(`SELECT to_char(s.completed_at AT TIME ZONE '${ZONE}','YYYY-MM') AS period,sum(li.quantity)::text AS quantity,sum(li.line_subtotal)::text AS amount ${scope} GROUP BY 1`,w.args);
+        const byPeriod=new Map(monthly.map(row=>[String(row.period),row]));
+        report.series.push({key:'productQuantity',name:'Số lượng bán theo tháng',unit:'QUANTITY',points:buckets.map(period=>({period,value:String(byPeriod.get(period)?.quantity??'0')}))});
+        report.series.push({key:'productAmount',name:'Doanh thu theo giá gốc theo tháng',unit:'VND',points:buckets.map(period=>({period,value:String(byPeriod.get(period)?.amount??'0')}))});
+      }
+      sql=`SELECT li.sku||' | '||li.variant_name||' | '||li.unit_price::text AS id,li.sku,li.product_name AS product_name,li.variant_name AS variant_name,li.unit_price::text AS unit_price,sum(li.quantity)::integer AS quantity,sum(li.line_subtotal)::text AS amount ${scope} GROUP BY li.sku,li.product_name,li.variant_name,li.unit_price`;args=w.args;
+      report.columns=[this.column('sku','SKU'),this.column('productName','Sản phẩm'),this.column('variantName','Biến thể'),this.column('quantity','Số lượng','NUMBER'),this.column('unitPrice','Đơn giá','MONEY'),this.column('amount','Thành tiền','MONEY')];
     }else if(kind==='promotions'){
       const w=this.where(q,'orders','created_at');
       add('discountAmount','Ưu đãi của đơn chưa hủy',await this.scalar(`SELECT COALESCE(sum(s.product_discount_amount+s.order_discount_amount+s.voucher_discount_amount),0)::text AS value FROM orders s WHERE s.status<>'CANCELLED'${w.sql}`,w.args),'VND');
@@ -133,6 +184,6 @@ export class ReportsService {
   }
   registerRoutes(routes:Routes):void{
     routes.add('GET','/admin/dashboard',{permission:'reports.read'},c=>this.get('dashboard',c.query));
-    for(const kind of ['sales','payments','inventory','purchases','promotions','activity'])routes.add('GET',`/admin/reports/${kind}`,{permission:'reports.read'},c=>this.get(kind,c.query));
+    for(const kind of ['sales','payments','inventory','purchases','products','promotions','activity'])routes.add('GET',`/admin/reports/${kind}`,{permission:'reports.read'},c=>this.get(kind,c.query));
   }
 }

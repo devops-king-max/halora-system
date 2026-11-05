@@ -46,6 +46,16 @@ export class CatalogService {
     if(view==='api_products'||view==='api_public_products') {
       if(c.query.minPrice!==undefined) where.push(`${view==='api_products'?'EXISTS(SELECT 1 FROM product_variants v WHERE v.product_id=api_products.id AND v.sale_price>=':'price_from>='}${param(c.query.minPrice)}${view==='api_products'?')':''}`);
       if(c.query.maxPrice!==undefined) where.push(`${view==='api_products'?'EXISTS(SELECT 1 FROM product_variants v WHERE v.product_id=api_products.id AND v.sale_price<=':'price_from<='}${param(c.query.maxPrice)}${view==='api_products'?')':''}`);
+      const priceOperator=c.query.priceOperator!==undefined,priceValue=c.query.priceValue!==undefined;
+      assert(priceOperator===priceValue,'VALIDATION_ERROR','Vui lòng chọn cả toán tử và giá trị lọc giá.',400);
+      if(priceOperator){
+        const operators:Record<string,string>={GT:'>',LT:'<',GTE:'>=',LTE:'<=',EQ:'=',NE:'<>'};
+        const operator=operators[String(c.query.priceOperator)];
+        assert(operator,'VALIDATION_ERROR','Toán tử lọc giá không hợp lệ.',400);
+        assert(/^[0-9]{1,18}$/.test(String(c.query.priceValue)),'VALIDATION_ERROR','Giá trị lọc giá phải là số nguyên VND.',400);
+        const active=view==='api_public_products'?" AND v.status='ACTIVE'":'';
+        where.push(`(SELECT min(v.sale_price) FROM product_variants v WHERE v.product_id=${ident(view)}.id${active}) ${operator} ${param(c.query.priceValue)}`);
+      }
       if(c.query.inStock===true) where.push(`EXISTS(SELECT 1 FROM product_variants v JOIN inventory_balances b ON b.variant_id=v.id WHERE v.product_id=${ident(view)}.id AND v.status='ACTIVE' AND b.stock_quantity>0)`);
       if(c.query.search) { /* Product SKU search is included alongside product name. */
         const old=where.findIndex(w=>w.includes('ILIKE'));
@@ -61,6 +71,13 @@ export class CatalogService {
     const direction=c.query.sortOrder==='asc'?'ASC':'DESC';
     const rows=await this.db.query(`SELECT * FROM ${ident(view)}${clause} ORDER BY ${ident(sort)} ${direction}${sort==='id'?'':view==='api_balances'?',variant_id ASC':',id ASC'} LIMIT $${args.length+1} OFFSET $${args.length+2}`,[...args,limit,offset]);
     return pageResult(rows,Number(count.total),page,limit);
+  }
+  private async priceRange(scope:'public'|'admin'):Promise<Row>{
+    const sql=scope==='public'
+      ?'SELECT min(price_from)::numeric(18,0) AS min_price,max(price_from)::numeric(18,0) AS max_price FROM api_public_products WHERE price_from IS NOT NULL'
+      :'SELECT min(price)::numeric(18,0) AS min_price,max(price)::numeric(18,0) AS max_price FROM (SELECT (SELECT min(v.sale_price) FROM product_variants v WHERE v.product_id=p.id) AS price FROM products p) q WHERE price IS NOT NULL';
+    const row=await this.db.one<Row>(sql);
+    return {minPrice:row.minPrice??null,maxPrice:row.maxPrice??null};
   }
   private async parent(resource:Resource,c:Context):Promise<void>{
     if(resource.parent) await this.db.one(`SELECT id FROM ${ident(resource.parent.table)} WHERE id=$1`,[c.params[resource.parent.param]]);
@@ -142,8 +159,10 @@ export class CatalogService {
     if(!byAccount&&initial.accountId)await this.db.one('SELECT id FROM accounts WHERE id=$1 FOR UPDATE',[initial.accountId]);
     const employee=await this.db.one('SELECT * FROM employees WHERE id=$1 FOR UPDATE',[initial.id]);
     if(!byAccount)version(employee,c.body.version);
+    const roleIds=[...new Set(c.body.roleIds as string[])].sort();
+    assert(roleIds.length<=1,'VALIDATION_ERROR','Mỗi tài khoản nhân viên chỉ được gán tối đa một vai trò.',400);
     await this.db.query('DELETE FROM employee_roles WHERE employee_id=$1',[employee.id]);
-    for(const id of [...new Set(c.body.roleIds as string[])].sort()){
+    for(const id of roleIds){
       const role=await this.db.one('SELECT code FROM roles WHERE id=$1',[id]);
       assert(role.code!=='CUSTOMER','VALIDATION_ERROR','Vai trò khách hàng không được gán cho nhân viên.',400);
       await this.db.query('INSERT INTO employee_roles(employee_id,role_id) VALUES($1,$2)',[employee.id,id]);
@@ -155,6 +174,8 @@ export class CatalogService {
     return this.db.one(`SELECT * FROM ${byAccount?'api_accounts':'api_employees'} WHERE id=$1`,[byAccount?account!.id:employee.id]);
   }
   registerRoutes(routes:Routes):void{
+    routes.add('GET','/products/price-range',{public:true},()=>this.priceRange('public'));
+    routes.add('GET','/admin/products/price-range',{permission:'products.read'},()=>this.priceRange('admin'));
     for(const resource of ['products','brands'])routes.add('PUT',`/admin/${resource}/{id}/thumbnail`,{permission:`${resource}.update`},async c=>{
       const row=await this.db.one(`SELECT * FROM ${ident(resource)} WHERE id=$1 FOR UPDATE`,[c.params.id]);version(row,c.body.version);
       if(c.body.mediaId)await this.db.one('SELECT id FROM media_assets WHERE id=$1',[c.body.mediaId]);

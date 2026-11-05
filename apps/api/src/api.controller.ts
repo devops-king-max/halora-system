@@ -11,14 +11,16 @@ import { CustomerService } from './commerce/customer.service';
 import { OrdersService } from './commerce/orders.service';
 import { DocumentsService } from './inventory/documents.service';
 import { ReportsService } from './reports/reports.service';
+import { InsightsService } from './insights/insights.service';
 import { FilesService, Download } from './files/files.service';
+import { AssistantService } from './assistant/assistant.service';
 
 @Controller()
 export class ApiController {
   readonly contract=new Contract();
   private readonly routes=new Routes();
-  constructor(@Inject(Database)private readonly db:Database,@Inject(AuthService)private readonly auth:AuthService,@Inject(CatalogService)catalog:CatalogService,@Inject(CustomerService)customers:CustomerService,@Inject(OrdersService)orders:OrdersService,@Inject(DocumentsService)documents:DocumentsService,@Inject(ReportsService)reports:ReportsService,@Inject(FilesService)files:FilesService){
-    for(const service of [auth,catalog,customers,orders,documents,reports,files])service.registerRoutes(this.routes);
+  constructor(@Inject(Database)private readonly db:Database,@Inject(AuthService)private readonly auth:AuthService,@Inject(CatalogService)catalog:CatalogService,@Inject(CustomerService)customers:CustomerService,@Inject(OrdersService)orders:OrdersService,@Inject(DocumentsService)documents:DocumentsService,@Inject(ReportsService)reports:ReportsService,@Inject(InsightsService)insights:InsightsService,@Inject(FilesService)files:FilesService,@Inject(AssistantService)assistant:AssistantService){
+    for(const service of [auth,catalog,customers,orders,documents,reports,insights,files,assistant])service.registerRoutes(this.routes);
     const implemented=new Set(this.routes.entries.keys());
     for(const route of this.contract.routes){const key=`${route.method} ${route.path}`;assert(implemented.delete(key),'INTERNAL_ERROR',`Missing handler: ${key}`,500);}
     assert(!implemented.size,'INTERNAL_ERROR',`Undocumented endpoints: ${[...implemented].join(', ')}`,500);

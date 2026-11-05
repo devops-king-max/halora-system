@@ -31,6 +31,9 @@ export const settings = {
   production: process.env.NODE_ENV === 'production',
   cookieSecure: process.env.COOKIE_SECURE === 'true' || (process.env.NODE_ENV === 'production' && process.env.COOKIE_SECURE !== 'false'),
   shippingFee: process.env.SHIPPING_FEE || '30000',
+  assistantModel: process.env.ASSISTANT_MODEL || 'deepseek-v4.1-flash',
+  assistantBaseUrl: process.env.ASSISTANT_BASE_URL || 'https://opencode.ai/inference/go/openai/v1',
+  assistantApiKey: process.env.ASSISTANT_API_KEY || '',
 };
 if(!/^\d{1,18}$/.test(settings.shippingFee))throw new Error('SHIPPING_FEE must be a nonnegative integer VND string, at most 18 digits');
 if(!Number.isInteger(settings.port)||settings.port<1||settings.port>65535)throw new Error('PORT must be between 1 and 65535');

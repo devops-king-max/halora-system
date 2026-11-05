@@ -10,6 +10,7 @@ import {
   Col,
   Statistic,
   Table,
+  Select,
   message,
 } from "antd";
 import {
@@ -26,6 +27,7 @@ import { apiClient } from "../../api";
 import { ApiStateWrapper } from "../../components/common/ApiStateWrapper";
 import { formatVnd, formatDateTime } from "../../utils/format";
 import { PermissionGuard } from "../../components/common/PermissionGuard";
+import { ReportSeriesCharts } from "../../components/reports/ReportCharts";
 import { ApiClientError } from "@halora/api-client";
 import type { ReportData } from "@halora/api-client";
 import dayjs from "dayjs";
@@ -33,24 +35,35 @@ import dayjs from "dayjs";
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
+type Quarter = 1 | 2 | 3 | 4;
+
+const currentYear = Number(
+  new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Ho_Chi_Minh", year: "numeric" }).format(new Date()),
+);
+const yearOptions = Array.from({ length: 6 }, (_, index) => currentYear - index);
+const quarterOptions: { value: Quarter; label: string }[] = [
+  { value: 1, label: "Quý 1" },
+  { value: 2, label: "Quý 2" },
+  { value: 3, label: "Quý 3" },
+  { value: 4, label: "Quý 4" },
+];
+
 export const ReportsPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>("sales");
-  const [dateRange, setDateRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null]>([
-    dayjs().startOf("month"),
-    dayjs().endOf("month"),
-  ]);
+  const [year, setYear] = useState<number>(currentYear);
+  const [quarter, setQuarter] = useState<Quarter | undefined>(undefined);
   const [compareRange, setCompareRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null]>([null, null]);
   const [exporting, setExporting] = useState<string | null>(null);
 
   const queryParams = {
-    from: dateRange[0]?.toISOString(),
-    to: dateRange[1]?.toISOString(),
+    year,
+    quarter: activeTab === "products" ? quarter : undefined,
     compareFrom: compareRange[0]?.toISOString(),
     compareTo: compareRange[1]?.toISOString(),
   };
 
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery<ReportData>({
-    queryKey: ["admin", "reports", activeTab, queryParams.from, queryParams.to, queryParams.compareFrom, queryParams.compareTo],
+    queryKey: ["admin", "reports", activeTab, year, queryParams.quarter, queryParams.compareFrom, queryParams.compareTo],
     queryFn: async () => {
       switch (activeTab) {
         case "sales":
@@ -61,6 +74,8 @@ export const ReportsPage: React.FC = () => {
           return await apiClient.reports.getInventory(queryParams);
         case "purchases":
           return await apiClient.reports.getPurchases(queryParams);
+        case "products":
+          return await apiClient.reports.getProducts(queryParams);
         case "promotions":
           return await apiClient.reports.getPromotions(queryParams);
         case "activity":
@@ -152,12 +167,28 @@ export const ReportsPage: React.FC = () => {
       <Card size="small" style={{ marginBottom: 16 }}>
         <Space wrap size="middle">
           <div>
-            <Text type="secondary" style={{ marginRight: 8 }}>Khoảng thời gian:</Text>
-            <RangePicker
-              value={dateRange}
-              onChange={(dates) => dates ? setDateRange([dates[0], dates[1]]) : setDateRange([null, null])}
+            <Text type="secondary" style={{ marginRight: 8 }}>Năm báo cáo:</Text>
+            <Select
+              value={year}
+              onChange={(value: number) => setYear(value)}
+              style={{ width: 140 }}
+              options={yearOptions.map((option) => ({ value: option, label: `Năm ${option}` }))}
             />
           </div>
+
+          {activeTab === "products" && (
+            <div>
+              <Text type="secondary" style={{ marginRight: 8 }}>Quý:</Text>
+              <Select
+                allowClear
+                placeholder="Cả năm"
+                value={quarter}
+                onChange={(value) => setQuarter(value as Quarter | undefined)}
+                style={{ width: 140 }}
+                options={quarterOptions}
+              />
+            </div>
+          )}
 
           <div>
             <Text type="secondary" style={{ marginRight: 8 }}>Khoảng so sánh:</Text>
@@ -178,6 +209,7 @@ export const ReportsPage: React.FC = () => {
           { key: "payments", label: "Báo cáo thanh toán & đối soát" },
           { key: "inventory", label: "Báo cáo tồn kho & định giá" },
           { key: "purchases", label: "Báo cáo nhập hàng" },
+          { key: "products", label: "Thống kê sản phẩm" },
           { key: "promotions", label: "Báo cáo khuyến mãi & voucher" },
           { key: "activity", label: "Nhật ký hoạt động hệ thống" },
         ]}
@@ -211,31 +243,8 @@ export const ReportsPage: React.FC = () => {
               </Row>
             )}
 
-            {/* Series Charts Table */}
-            {data.series && data.series.length > 0 && (
-              <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                {data.series.map((s) => (
-                  <Col xs={24} lg={12} key={s.key}>
-                    <Card title={s.name} size="small" bordered={false} style={{ background: "#fafafa" }}>
-                      <Table
-                        size="small"
-                        pagination={false}
-                        dataSource={s.points.map((pt, idx) => ({ ...pt, key: idx }))}
-                        columns={[
-                          { title: "Thời gian", dataIndex: "period", key: "period" },
-                          {
-                            title: `Giá trị (${s.unit === "VND" ? "₫" : s.unit})`,
-                            dataIndex: "value",
-                            key: "value",
-                            render: (val: string) => (s.unit === "VND" ? formatVnd(val) : val),
-                          },
-                        ]}
-                      />
-                    </Card>
-                  </Col>
-                ))}
-              </Row>
-            )}
+            {/* Series Charts */}
+            {data.series && data.series.length > 0 && <ReportSeriesCharts series={data.series} />}
 
             {/* Dynamic Report Table */}
             {data.columns && data.columns.length > 0 && (

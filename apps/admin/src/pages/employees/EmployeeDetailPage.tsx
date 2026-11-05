@@ -11,7 +11,7 @@ import {
   Select,
   Tag,
   message,
-  Checkbox,
+  Radio,
   Divider,
 } from "antd";
 import {
@@ -116,7 +116,7 @@ export const EmployeeDetailPage: React.FC = () => {
   const openRolesModal = () => {
     if (!employee) return;
     rolesForm.setFieldsValue({
-      roleIds: employee.roleIds || [],
+      roleIds: (employee.roleIds || []).slice(0, 1)[0],
     });
     setRolesModalOpen(true);
   };
@@ -277,16 +277,16 @@ export const EmployeeDetailPage: React.FC = () => {
         <Form
           form={rolesForm}
           layout="vertical"
-          onFinish={(vals: { roleIds: string[] }) => assignRolesMutation.mutate(vals.roleIds)}
+          onFinish={(vals: { roleIds?: string }) => assignRolesMutation.mutate(vals.roleIds ? [vals.roleIds] : [])}
         >
-          <Form.Item name="roleIds" label="Chọn vai trò">
-            <Checkbox.Group style={{ width: "100%", display: "flex", flexDirection: "column", gap: 10 }}>
+          <Form.Item name="roleIds" label="Chọn một vai trò">
+            <Radio.Group style={{ width: "100%", display: "flex", flexDirection: "column", gap: 10 }}>
               {rolesList?.filter(r => r.code !== 'CUSTOMER').map((r) => (
-                <Checkbox key={r.id} value={r.id}>
+                <Radio key={r.id} value={r.id}>
                   <Text strong>{r.name}</Text> (<code>{r.code}</code>) - {r.description}
-                </Checkbox>
+                </Radio>
               ))}
-            </Checkbox.Group>
+            </Radio.Group>
           </Form.Item>
         </Form>
       </Modal>

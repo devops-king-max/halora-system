@@ -29,6 +29,8 @@ export type RefundStatus = "PENDING" | "SUCCEEDED" | "FAILED";
 
 export type DocumentStatus = "DRAFT" | "POSTED" | "CANCELLED";
 
+export type PriceOperator = "GT" | "LT" | "GTE" | "LTE" | "EQ" | "NE";
+
 export type PromotionStatus = "DRAFT" | "ACTIVE" | "PAUSED" | "ENDED";
 export type PromotionType = "PRODUCT" | "ORDER" | "VOUCHER";
 
@@ -291,8 +293,75 @@ export interface ProductFilterQuery extends ListQuery {
   brandId?: UUID;
   minPrice?: Money;
   maxPrice?: Money;
+  priceOperator?: PriceOperator;
+  priceValue?: Money;
   isFeatured?: boolean;
   inStock?: boolean;
+}
+
+export type RecommendationReason = "CO_PURCHASE" | "CATEGORY" | "POPULAR";
+
+export interface RecommendationItem extends PublicProductSummary {
+  reason: RecommendationReason;
+  score: number;
+}
+
+export interface RestockInsight {
+  variantId: UUID;
+  productId: UUID;
+  sku: string;
+  productName: string;
+  variantName: string;
+  stockQuantity: number;
+  lowStockThreshold: number;
+  unitsSold30: number;
+  unitsSold90: number;
+  averageDailySales30: number;
+  averageDailySales90: number;
+  daysOfCover: number | null;
+  suggestedOrderQuantity: number;
+  targetCoverDays: number;
+  isLowStock: boolean;
+  lastSupplierId: UUID | null;
+  lastSupplierName: string | null;
+  lastUnitCost: Money | null;
+  quotedCostPrice: Money | null;
+  lastReceivedAt: ISODateTime | null;
+}
+
+export interface RestockInsightQuery {
+  targetCoverDays?: number;
+  limit?: number;
+}
+
+export interface ProductPriceRange {
+  minPrice: Money | null;
+  maxPrice: Money | null;
+}
+
+// ================= AI ASSISTANT =================
+export type AssistantRole = "user" | "assistant";
+
+export interface AssistantChatMessage {
+  role: AssistantRole;
+  content: string;
+}
+
+export interface AssistantChatInput {
+  messages: AssistantChatMessage[];
+}
+
+export interface AssistantProduct {
+  id: UUID;
+  code: string;
+  name: string;
+  thumbnailUrl: string | null;
+  priceFrom: Money | null;
+}
+
+export interface AssistantChatResult {
+  reply: string;
+  products: AssistantProduct[];
 }
 
 // ================= CUSTOMERS & ADDRESSES =================
@@ -362,6 +431,7 @@ export interface EmployeeAccountInput {
 }
 
 export interface EmployeeRoleAssignInput {
+  /** At most one fixed role; staff accounts cannot combine permission sets. */
   roleIds: UUID[];
   version: number;
 }
@@ -390,6 +460,7 @@ export interface Role extends EntityMetadata {
 }
 
 export interface AccountRoleAssignInput {
+  /** At most one fixed role; staff accounts cannot combine permission sets. */
   roleIds: UUID[];
   version: number;
 }
@@ -885,6 +956,8 @@ export interface ReportData {
 export interface ReportFilterQuery {
   from?: ISODateTime;
   to?: ISODateTime;
+  year?: number;
+  quarter?: 1 | 2 | 3 | 4;
   compareFrom?: ISODateTime;
   compareTo?: ISODateTime;
   productId?: UUID;
